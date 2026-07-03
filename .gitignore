@@ -1,0 +1,149 @@
+.vscode
+.DS_Store
+.idea
+
+# журналов
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# Диагностические отчеты (https://nodejs.org/api/report.html)
+report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+
+# Данные времени выполнения
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Каталог для инструментированных библиотек, созданный jscoverage/JSCover
+lib-cov
+
+# Каталог покрытия, используемый такими инструментами, как Стамбул
+coverage
+*.lcov
+
+# тестовое покрытие Нью-Йорка
+.nyc_output
+
+# Промежуточное хранилище Grunt (https://gruntjs.com/creating-plugins#storing-task-files)
+.grunt
+
+# Каталог зависимостей Bower (https://bower.io/)
+bower_components
+
+# конфигурация узла-waf
+.lock-wscript
+
+# Скомпилированные бинарные дополнения (https://nodejs.org/api/addons.html)
+build/Release
+
+# Каталоги зависимостей
+node_modules/
+jspm_packages/
+
+# Каталог зависимостей Snowpack (https://snowpack.dev/)
+web_modules/
+
+# Кэш TypeScript
+*.tsbuildinfo
+
+# Необязательный каталог кэша npm
+.npm
+
+# Дополнительный кэш eslint
+.eslintcache
+
+# Необязательный кеш stylelint
+.stylelintcache
+
+# Необязательная история REPL
+.node_repl_history
+
+# Вывод «npm package»
+*.tgz
+
+# Файл целостности пряжи
+.yarn-integrity
+
+# файлы переменных среды dotenv
+.env
+.env.*
+!.env.example
+
+# кэш посылки-пакета (https://parceljs.org/)
+.cache
+.parcel-cache
+
+# Вывод сборки Next.js
+.next
+out
+
+# Nuxt.js создает/генерирует выходные данные
+.nuxt
+dist
+
+# файлы Гэтсби
+.cache/
+# Прокомментируйте в общедоступной строке, если ваш проект использует Gatsby, а не Next.js.
+# https://nextjs.org/blog/next-9-1#public-directory-support
+# общедоступный
+
+# вывод сборки vuepress
+.vuepress/dist
+
+# временный каталог и каталог кэша vuepress v2.x
+.temp
+.cache
+
+# Каталог кэша Sveltekit
+.svelte-kit/
+
+# вывод сборки vitepress
+**/.vitepress/dist
+
+# каталог кэша vitepress
+**/.vitepress/cache
+
+# Кэш Docusaurus и сгенерированные файлы
+.docusaurus
+
+# Бессерверные каталоги
+.serverless/
+
+# Кэш FuseBox
+.fusebox/
+
+# Локальные файлы DynamoDB
+.dynamodb/
+
+# Каталог кэша Firebase
+.firebase/
+
+# Файл порта TernJS
+.tern-port
+
+# Хранит версии VSCode, используемые для тестирования расширений VSCode.
+.vscode-test
+
+#пряжа вз
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/sdks
+!.yarn/versions
+
+# Файлы журналов Vite
+vite.config.js.timestamp-*
+vite.config.ts.timestamp-*
+
+google-service-account.json
+
+node_modules/
+.env
+uploads/
