@@ -1,5 +1,7 @@
 import { Pool } from 'pg';
-import dotenv from 'dotenv/config';
+import 'dotenv/config';
+
+const DB_TIMEZONE = process.env.DB_TIMEZONE || 'Europe/Kyiv';
 
 const buildConnectionString = (rawConnectionString) => {
   if (!rawConnectionString) {
@@ -21,6 +23,8 @@ const buildConnectionString = (rawConnectionString) => {
       parsed.searchParams.set('sslmode', 'verify-full');
       parsed.searchParams.delete('uselibpqcompat');
     }
+
+    parsed.searchParams.set('options', `-c timezone=${DB_TIMEZONE}`);
 
     return parsed.toString();
   } catch {

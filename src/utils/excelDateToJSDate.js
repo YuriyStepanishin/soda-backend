@@ -1,5 +1,3 @@
-import XLSX from 'xlsx';
-
 export const excelDateToJSDate = (value) => {
   if (!value) return null;
 

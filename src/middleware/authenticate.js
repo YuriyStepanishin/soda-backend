@@ -1,7 +1,7 @@
 import jwt from 'jsonwebtoken';
-import { getUserProfile } from '../config/users.js';
+import { getAuthContextByEmail } from '../services/authService.js';
 
-export const authenticate = (req, res, next) => {
+export const authenticate = async (req, res, next) => {
   const authHeader = req.headers.authorization;
 
   if (!authHeader) {
@@ -23,27 +23,19 @@ export const authenticate = (req, res, next) => {
   try {
     const payload = jwt.verify(token, process.env.JWT_SECRET);
 
-    const profile = getUserProfile(payload.email);
+    const userContext = await getAuthContextByEmail(payload.email);
 
-    if (!profile) {
+    if (!userContext) {
       return res.status(403).json({
         success: false,
         message: 'Access denied',
       });
     }
 
-    req.user = {
-      id: payload.id,
-      email: payload.email,
-      role: profile.role,
-      department: profile.department,
-      departments: profile.departments || [],
-      representative: profile.representative,
-      brands: profile.brands || [],
-    };
+    req.user = userContext;
 
     next();
-  } catch (error) {
+  } catch {
     return res.status(401).json({
       success: false,
       message: 'Invalid or expired token',

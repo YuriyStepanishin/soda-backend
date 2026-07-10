@@ -15,10 +15,16 @@ const drive = google.drive({
 export async function getExcelFiles() {
   const response = await drive.files.list({
     q: `'${process.env.UPLOADS_FOLDER_ID}' in parents and trashed=false`,
-    fields: 'files(id,name)',
+    fields: 'files(id,name,mimeType)',
+    supportsAllDrives: true,
+    includeItemsFromAllDrives: true,
   });
 
-  return response.data.files;
+  return (response.data.files || []).filter((file) => {
+    const name = (file.name || '').toLowerCase();
+
+    return name.endsWith('.xls') || name.endsWith('.xlsx');
+  });
 }
 
 export async function downloadFile(fileId, fileName) {
@@ -28,6 +34,7 @@ export async function downloadFile(fileId, fileName) {
     {
       fileId,
       alt: 'media',
+      supportsAllDrives: true,
     },
     {
       responseType: 'stream',
@@ -48,5 +55,6 @@ export async function moveToArchive(fileId) {
     fileId,
     addParents: process.env.ARCHIVE_FOLDER_ID,
     removeParents: process.env.UPLOADS_FOLDER_ID,
+    supportsAllDrives: true,
   });
 }

@@ -2,11 +2,12 @@ import { processGoogleDriveImports } from '../services/processGoogleDriveImports
 
 export const runImport = async (req, res) => {
   try {
-    await processGoogleDriveImports();
+    const summary = await processGoogleDriveImports();
 
     res.json({
       success: true,
       message: 'Import completed',
+      summary,
     });
   } catch (error) {
     res.status(500).json({

@@ -29,3 +29,17 @@ export const createUser = async ({ email, passwordHash }) => {
 
   return result.rows[0];
 };
+
+export const updateUserPasswordById = async ({ id, passwordHash }) => {
+  const result = await pool.query(
+    `
+    UPDATE users
+    SET password_hash = $1
+    WHERE id = $2
+    RETURNING *
+    `,
+    [passwordHash, id],
+  );
+
+  return result.rows[0];
+};
