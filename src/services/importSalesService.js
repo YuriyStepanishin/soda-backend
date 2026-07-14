@@ -1,6 +1,21 @@
 import XLSX from 'xlsx';
 import { pool } from '../db/connectNeon.js';
 import { excelDateToJSDate } from '../utils/excelDateToJSDate.js';
+import { AGENT_DEPARTMENTS } from '../constants/agentDepartments.js';
+
+const normalizeVolume = (value) => {
+  if (value == null || value === '') {
+    return null;
+  }
+
+  const normalized = String(value).trim();
+
+  if (!normalized || normalized.length > 50) {
+    return null;
+  }
+
+  return normalized;
+};
 
 export const importSalesService = async (filePath) => {
   const workbook = XLSX.readFile(filePath);
@@ -19,24 +34,41 @@ export const importSalesService = async (filePath) => {
   console.log('Рядків для імпорту:', dataRows.length);
 
   const pricesResult = await pool.query(`
-    SELECT
-      product_name,
-      retail_price,
-      bpl_price,
-      bpl5_price,
-      bpl8_price
-    FROM prices
-  `);
+  SELECT
+    product_name,
+    price,
+    price_type_id
+  FROM prices
+`);
 
   const pricesMap = new Map();
 
   pricesResult.rows.forEach((item) => {
-    pricesMap.set(item.product_name.trim(), {
-      retailPrice: Number(item.retail_price),
-      bplPrice: Number(item.bpl_price),
-      bpl5Price: Number(item.bpl5_price),
-      bpl8Price: Number(item.bpl8_price),
-    });
+    const key = item.product_name.trim();
+
+    if (!pricesMap.has(key)) {
+      pricesMap.set(key, {});
+    }
+
+    const product = pricesMap.get(key);
+
+    switch (item.price_type_id) {
+      case 1:
+        product.retailPrice = Number(item.price);
+        break;
+
+      case 2:
+        product.bplPrice = Number(item.price);
+        break;
+
+      case 3:
+        product.bpl5Price = Number(item.price);
+        break;
+
+      case 4:
+        product.bpl8Price = Number(item.price);
+        break;
+    }
   });
 
   const batchSize = 1000;
@@ -49,7 +81,7 @@ export const importSalesService = async (filePath) => {
     const placeholders = [];
 
     batch.forEach((row, rowIndex) => {
-      const COLUMN_COUNT = 21;
+      const COLUMN_COUNT = 22;
       const base = rowIndex * COLUMN_COUNT;
 
       placeholders.push(`
@@ -74,18 +106,25 @@ export const importSalesService = async (filePath) => {
           $${base + 18},
           $${base + 19},
           $${base + 20},
-          $${base + 21}
+          $${base + 21},
+          $${base + 22}
         )
       `);
 
       const qty = Number(row[7]) || 0;
       const amount = Number(row[8]) || 0;
+      const volume = normalizeVolume(row[5]);
 
       const price = qty > 0 ? Number((amount / qty).toFixed(2)) : 0;
 
       const altName = `${row[12] || ''} (${row[11] || ''})`;
 
       const productName = (row[3] || '').trim();
+      const agentName = row[15]?.trim() || null;
+
+      const department = agentName
+        ? AGENT_DEPARTMENTS[agentName] || 'Інше'
+        : null;
 
       const productPrice = pricesMap.get(productName);
 
@@ -133,7 +172,7 @@ export const importSalesService = async (filePath) => {
         row[2] ?? null,
         row[3] ?? null,
         row[4] ?? null,
-        row[5] ?? null,
+        volume,
         row[6] ?? null,
         row[7] ?? null,
         row[8] ?? null,
@@ -143,7 +182,8 @@ export const importSalesService = async (filePath) => {
         row[12] ?? null,
         row[13] ?? null,
         row[14] ?? null,
-        row[15] ?? null,
+        agentName,
+        department,
         row[16] ?? null,
         price,
         discount,
@@ -170,6 +210,7 @@ export const importSalesService = async (filePath) => {
         outlet_type,
         outlet_code,
         agent_name,
+        department,
         supervisor_name,
         price,
         discount,
@@ -179,6 +220,7 @@ export const importSalesService = async (filePath) => {
       VALUES
       ${placeholders.join(',')}
       ON CONFLICT DO NOTHING
+
     `;
 
     await pool.query(query, values);

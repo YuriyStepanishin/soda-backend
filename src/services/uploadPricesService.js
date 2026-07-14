@@ -1,12 +1,19 @@
 import XLSX from 'xlsx';
 import { pool } from '../db/connectNeon.js';
 
-export const uploadPricesService = async (filePath) => {
+const PRICE_TYPES = {
+  Роздріб: 1,
+  БПЛ: 2,
+  'БПЛ-5%': 3,
+  'БПЛ-8%': 4,
+};
+
+export const uploadPricesService = async (filePath, supplier = 'Орімі') => {
   const workbook = XLSX.readFile(filePath);
 
-  const priceSheet = workbook.Sheets[workbook.SheetNames[0]];
+  const sheet = workbook.Sheets[workbook.SheetNames[0]];
 
-  const rows = XLSX.utils.sheet_to_json(priceSheet);
+  const rows = XLSX.utils.sheet_to_json(sheet);
 
   const normalizedRows = rows.map((row) =>
     Object.fromEntries(
@@ -16,32 +23,39 @@ export const uploadPricesService = async (filePath) => {
 
   let updated = 0;
 
+  console.log(normalizedRows[0]);
+
   for (const row of normalizedRows) {
+    const tm = row['ТМ'] || '';
+    const productName = row['товар'] || '';
+    const price = Number(row['ціна']) || 0;
+    const priceTypeId = PRICE_TYPES[row['Тип ціни']];
+
+    if (!productName || !priceTypeId) {
+      continue;
+    }
+
     await pool.query(
       `
       INSERT INTO prices (
+        tm,
+        supplier,
         product_name,
-        retail_price,
-        bpl_price,
-        bpl5_price,
-        bpl8_price
+        price,
+        price_type_id
       )
-      VALUES ($1,$2,$3,$4,$5)
+      VALUES ($1, $2, $3, $4, $5)
 
-      ON CONFLICT (product_name)
+      ON CONFLICT (
+        supplier,
+        product_name,
+        price_type_id
+      )
       DO UPDATE SET
-        retail_price = EXCLUDED.retail_price,
-        bpl_price = EXCLUDED.bpl_price,
-        bpl5_price = EXCLUDED.bpl5_price,
-        bpl8_price = EXCLUDED.bpl8_price
+        tm = EXCLUDED.tm,
+        price = EXCLUDED.price
       `,
-      [
-        row['товар'],
-        Number(row['ціна']) || 0,
-        Number(row['БПЛ']) || 0,
-        Number(row['БПЛ-5%']) || 0,
-        Number(row['БПЛ-8%']) || 0,
-      ],
+      [tm, supplier, productName, price, priceTypeId],
     );
 
     updated++;

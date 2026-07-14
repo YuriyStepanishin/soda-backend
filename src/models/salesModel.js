@@ -74,6 +74,23 @@ export const findAllSales = async (filter, { page, limit }) => {
   return result.rows;
 };
 
+export const getSalesMeta = async (filter) => {
+  const result = await pool.query(
+    `
+    SELECT DISTINCT tm, agent_name, supervisor_name
+    FROM sales
+    ${filter.where}
+    `,
+    filter.params,
+  );
+
+  return {
+    tm: result.rows.map((row) => row.tm),
+    agent_name: result.rows.map((row) => row.agent_name),
+    supervisor_name: result.rows.map((row) => row.supervisor_name),
+  };
+};
+
 export const countSales = async (filter) => {
   const result = await pool.query(
     `

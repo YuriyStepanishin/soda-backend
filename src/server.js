@@ -25,7 +25,7 @@ const APP_TIMEZONE = process.env.APP_TIMEZONE || 'Europe/Kyiv';
 process.env.TZ = process.env.TZ || APP_TIMEZONE;
 const IMPORT_CRON_ENABLED =
   (process.env.IMPORT_CRON_ENABLED || 'true').toLowerCase() === 'true';
-const IMPORT_CRON_SCHEDULE = process.env.IMPORT_CRON_SCHEDULE || '*/10 * * * *';
+const IMPORT_CRON_SCHEDULE = process.env.IMPORT_CRON_SCHEDULE || '*/5 * * * *';
 
 let isImportRunning = false;
 

@@ -31,20 +31,26 @@ const buildRequestWhere = (filters = {}, baseFilter) => {
 
   const search =
     typeof filters.search === 'string' ? filters.search.trim() : '';
-  const brand = typeof filters.brand === 'string' ? filters.brand.trim() : '';
+
+  const brands =
+    typeof filters.brands === 'string'
+      ? filters.brands
+          .split(',')
+          .map((item) => item.trim())
+          .filter(Boolean)
+      : [];
   const agent = typeof filters.agent === 'string' ? filters.agent.trim() : '';
+  const department =
+    typeof filters.department === 'string' ? filters.department.trim() : '';
   const dateFrom =
     typeof filters.dateFrom === 'string' ? filters.dateFrom.trim() : '';
   const dateTo =
     typeof filters.dateTo === 'string' ? filters.dateTo.trim() : '';
 
-  if (brand) {
-    appendCondition(
-      whereParts,
-      params,
-      (index) => `tm ILIKE $${index}`,
-      `%${brand}%`,
-    );
+  if (brands.length) {
+    params.push(brands);
+
+    whereParts.push(`tm = ANY($${params.length})`);
   }
 
   if (agent) {
@@ -53,6 +59,14 @@ const buildRequestWhere = (filters = {}, baseFilter) => {
       params,
       (index) => `agent_name ILIKE $${index}`,
       `%${agent}%`,
+    );
+  }
+  if (department) {
+    appendCondition(
+      whereParts,
+      params,
+      (index) => `department = $${index}`,
+      department,
     );
   }
 

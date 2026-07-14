@@ -7,8 +7,9 @@ export const getSales = async (req, res) => {
 
     const filters = {
       search: req.query.search,
-      brand: req.query.brand,
+      brands: req.query.brands,
       agent: req.query.agent,
+      department: req.query.department,
       dateFrom: req.query.dateFrom,
       dateTo: req.query.dateTo,
     };

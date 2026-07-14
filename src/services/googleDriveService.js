@@ -1,9 +1,19 @@
 import fs from 'fs';
 import path from 'path';
 import { google } from 'googleapis';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const projectRoot = path.resolve(__dirname, '../..');
+const uploadsDir = path.join(projectRoot, 'uploads');
+const serviceAccountPath = path.join(
+  projectRoot,
+  'google-service-account.json',
+);
 
 const auth = new google.auth.GoogleAuth({
-  keyFile: './google-service-account.json',
+  keyFile: serviceAccountPath,
   scopes: ['https://www.googleapis.com/auth/drive'],
 });
 
@@ -13,6 +23,10 @@ const drive = google.drive({
 });
 
 export async function getExcelFiles() {
+  if (!process.env.UPLOADS_FOLDER_ID) {
+    throw new Error('UPLOADS_FOLDER_ID is not configured');
+  }
+
   const response = await drive.files.list({
     q: `'${process.env.UPLOADS_FOLDER_ID}' in parents and trashed=false`,
     fields: 'files(id,name,mimeType)',
@@ -28,7 +42,9 @@ export async function getExcelFiles() {
 }
 
 export async function downloadFile(fileId, fileName) {
-  const filePath = path.join('uploads', fileName);
+  await fs.promises.mkdir(uploadsDir, { recursive: true });
+
+  const filePath = path.join(uploadsDir, fileName);
 
   const response = await drive.files.get(
     {
@@ -51,6 +67,10 @@ export async function downloadFile(fileId, fileName) {
 }
 
 export async function moveToArchive(fileId) {
+  if (!process.env.ARCHIVE_FOLDER_ID) {
+    throw new Error('ARCHIVE_FOLDER_ID is not configured');
+  }
+
   await drive.files.update({
     fileId,
     addParents: process.env.ARCHIVE_FOLDER_ID,
