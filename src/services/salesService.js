@@ -3,6 +3,8 @@ import {
   findAllSales,
   findSaleById,
   countSales,
+  getSalesSummary,
+  getSalesTotals,
 } from '../models/salesModel.js';
 
 const normalizePagination = (pagination = {}) => {
@@ -118,6 +120,19 @@ export const getAllSales = async (user, filters, pagination) => {
     total,
     page: normalizedPagination.page,
     limit: normalizedPagination.limit,
+  };
+};
+
+export const getSummary = async (user, filters) => {
+  const roleFilter = buildSalesWhere(user);
+  const filter = buildRequestWhere(filters, roleFilter);
+
+  const summary = await getSalesSummary(filter);
+  const totals = await getSalesTotals(filter);
+
+  return {
+    summary,
+    totals,
   };
 };
 

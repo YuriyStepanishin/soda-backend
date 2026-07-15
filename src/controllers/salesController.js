@@ -1,4 +1,4 @@
-import { getAllSales, getSale } from '../services/salesService.js';
+import { getAllSales, getSale, getSummary } from '../services/salesService.js';
 
 export const getSales = async (req, res) => {
   try {
@@ -29,6 +29,32 @@ export const getSales = async (req, res) => {
         total: result.total,
         pages: Math.ceil(result.total / result.limit),
       },
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+export const getSalesSummary = async (req, res) => {
+  try {
+    const filters = {
+      search: req.query.search,
+      brands: req.query.brands,
+      agent: req.query.agent,
+      department: req.query.department,
+      dateFrom: req.query.dateFrom,
+      dateTo: req.query.dateTo,
+    };
+
+    const result = await getSummary(req.user, filters);
+
+    res.json({
+      success: true,
+      data: result.summary,
+      totals: result.totals,
     });
   } catch (error) {
     res.status(500).json({

@@ -187,3 +187,64 @@ export const replaceAllSales = async (rows) => {
     client.release();
   }
 };
+export const getSalesSummary = async (filter) => {
+  const result = await pool.query(
+    `
+    WITH brand_sales AS (
+      SELECT
+        tm,
+        COALESCE(outlet_code, client_code) AS outlet_id,
+        SUM(amount) AS outlet_amount,
+       SUM(qty * weight) AS outlet_weight
+      FROM sales
+      ${filter.where}
+      GROUP BY
+        tm,
+        COALESCE(outlet_code, client_code)
+    )
+
+    SELECT
+      tm,
+      COUNT(DISTINCT outlet_id)::int AS stores,
+      ROUND(SUM(outlet_weight)::numeric, 2) AS weight,
+      ROUND(SUM(outlet_amount)::numeric, 2) AS amount
+    FROM brand_sales
+    GROUP BY tm
+    ORDER BY amount DESC
+    `,
+    filter.params,
+  );
+
+  return result.rows;
+};
+
+export const getSalesTotals = async (filter) => {
+  const result = await pool.query(
+    `
+    WITH brand_sales AS (
+      SELECT
+        tm,
+        COALESCE(outlet_code, client_code) AS outlet_id,
+        SUM(amount) AS outlet_amount,
+       SUM(qty * weight) AS outlet_weight
+      FROM sales
+      ${filter.where}
+      GROUP BY
+        tm,
+        COALESCE(outlet_code, client_code)
+    )
+
+    SELECT
+      COUNT(DISTINCT outlet_id)::int AS stores,
+
+      ROUND(SUM(outlet_weight)::numeric, 2) AS weight,
+
+      ROUND(SUM(outlet_amount)::numeric, 2) AS amount
+
+    FROM brand_sales
+    `,
+    filter.params,
+  );
+
+  return result.rows[0];
+};
