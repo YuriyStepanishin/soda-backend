@@ -1,4 +1,13 @@
-import { getAllSales, getSale, getSummary } from '../services/salesService.js';
+import {
+  getAllSales,
+  getSale,
+  getSummary,
+  getStores,
+  getProducts,
+  getDates,
+  getHierarchy,
+  getFilters,
+} from '../services/salesService.js';
 
 export const getSales = async (req, res) => {
   try {
@@ -8,6 +17,7 @@ export const getSales = async (req, res) => {
     const filters = {
       search: req.query.search,
       brands: req.query.brands,
+      stores: req.query.stores ?? req.query.store,
       agent: req.query.agent,
       department: req.query.department,
       dateFrom: req.query.dateFrom,
@@ -42,6 +52,7 @@ export const getSalesSummary = async (req, res) => {
   try {
     const filters = {
       search: req.query.search,
+      stores: req.query.stores ?? req.query.store,
       brands: req.query.brands,
       agent: req.query.agent,
       department: req.query.department,
@@ -79,6 +90,128 @@ export const getSaleById = async (req, res) => {
       success: true,
       data: sale,
     });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+export const getStoresSummary = async (req, res) => {
+  try {
+    const filters = {
+      search: req.query.search,
+
+      brands: req.query.brands,
+
+      stores: req.query.stores,
+      storeSearch: req.query.storeSearch,
+
+      products: req.query.products,
+
+      agent: req.query.agent,
+      department: req.query.department,
+
+      dateFrom: req.query.dateFrom,
+      dateTo: req.query.dateTo,
+    };
+
+    const stores = await getStores(req.user, filters);
+
+    res.json({
+      success: true,
+      data: stores,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+export const getStoreProducts = async (req, res) => {
+  try {
+    const filters = {
+      search: req.query.search,
+      brands: req.query.brands,
+      stores: req.query.stores ?? req.query.store,
+      agent: req.query.agent,
+      department: req.query.department,
+      dateFrom: req.query.dateFrom,
+      dateTo: req.query.dateTo,
+    };
+
+    const data = await getProducts(req.user, filters);
+
+    res.json({
+      success: true,
+      data,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+export const getStoreDates = async (req, res) => {
+  try {
+    const filters = {
+      search: req.query.search,
+      brands: req.query.brands,
+      stores: req.query.stores ?? req.query.store,
+      agent: req.query.agent,
+      department: req.query.department,
+      dateFrom: req.query.dateFrom,
+      dateTo: req.query.dateTo,
+    };
+
+    const data = await getDates(req.user, filters);
+
+    res.json({
+      success: true,
+      data,
+    });
+  } catch (error) {
+    console.error('getSalesFilters error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+export const getSalesHierarchyController = async (req, res) => {
+  try {
+    const filters = {
+      search: req.query.search,
+      brands: req.query.brands,
+      stores: req.query.stores ?? req.query.store,
+      agent: req.query.agent,
+      department: req.query.department,
+      dateFrom: req.query.dateFrom,
+      dateTo: req.query.dateTo,
+    };
+
+    const data = await getHierarchy(req.user, filters);
+
+    res.json({
+      success: true,
+      data,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+export const getSalesFilters = async (req, res) => {
+  try {
+    const data = await getFilters(req.user, req.query);
+
+    res.json(data);
   } catch (error) {
     res.status(500).json({
       success: false,
