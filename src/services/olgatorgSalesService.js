@@ -1,4 +1,4 @@
-import { buildSalesWhere } from '../config/users.js';
+import { buildSalesWhere } from '../config/olgatorgUsers.js';
 import { buildRequestWhere } from '../utils/buildRequestWhere.js';
 import {
   findAllSales,
@@ -6,13 +6,15 @@ import {
   countSales,
   getSalesSummary,
   getSalesTotals,
+  getSalesDrilldown,
   getStoresSummary,
   getStoreProducts,
   getStoreDates,
   getSalesHierarchy,
   getFiltersData,
-} from '../models/salesModel.js';
+} from '../models/olgatorgSalesModel.js';
 
+// Централізована нормалізація пагінації, щоб усі контролери працювали однаково.
 const normalizePagination = (pagination = {}) => {
   const rawPage = Number(pagination.page);
   const rawLimit = Number(pagination.limit);
@@ -23,14 +25,16 @@ const normalizePagination = (pagination = {}) => {
   return { page, limit };
 };
 
+// Шар сервісу: поєднує role-based фільтр + запитні фільтри + модель продажів.
 export const getAllSales = async (user, filters, pagination) => {
   const roleFilter = buildSalesWhere(user);
   const filter = buildRequestWhere(filters, roleFilter);
   const normalizedPagination = normalizePagination(pagination);
 
-  const sales = await findAllSales(filter, normalizedPagination);
-
-  const total = await countSales(filter);
+  const [sales, total] = await Promise.all([
+    findAllSales(filter, normalizedPagination),
+    countSales(filter),
+  ]);
 
   return {
     sales,
@@ -40,12 +44,15 @@ export const getAllSales = async (user, filters, pagination) => {
   };
 };
 
+// Повертає агрегації для верхніх KPI-блоків.
 export const getSummary = async (user, filters) => {
   const roleFilter = buildSalesWhere(user);
   const filter = buildRequestWhere(filters, roleFilter);
 
-  const summary = await getSalesSummary(filter);
-  const totals = await getSalesTotals(filter);
+  const [summary, totals] = await Promise.all([
+    getSalesSummary(filter),
+    getSalesTotals(filter),
+  ]);
 
   return {
     summary,
@@ -53,15 +60,26 @@ export const getSummary = async (user, filters) => {
   };
 };
 
+// Делегує drilldown у модель після накладання доступів користувача.
+export const getDrilldown = async (user, groupBy, filters) => {
+  const roleFilter = buildSalesWhere(user);
+  const filter = buildRequestWhere(filters, roleFilter);
+
+  return await getSalesDrilldown(groupBy, filter);
+};
+
+// Простий проксі до моделі для читання продажу по id.
 export const getSale = async (id) => {
   return await findSaleById(id);
 };
+// Вітрина магазинів у межах доступної користувачу вибірки.
 export const getStores = async (user, filters) => {
   const roleFilter = buildSalesWhere(user);
   const filter = buildRequestWhere(filters, roleFilter);
 
   return await getStoresSummary(filter);
 };
+// Вітрина продуктів у межах доступної користувачу вибірки.
 export const getProducts = async (user, filters) => {
   const roleFilter = buildSalesWhere(user);
   const filter = buildRequestWhere(filters, roleFilter);
@@ -69,12 +87,14 @@ export const getProducts = async (user, filters) => {
   return await getStoreProducts(filter);
 };
 
+// Вітрина дат у межах доступної користувачу вибірки.
 export const getDates = async (user, filters) => {
   const roleFilter = buildSalesWhere(user);
   const filter = buildRequestWhere(filters, roleFilter);
 
   return await getStoreDates(filter);
 };
+// Дерево ієрархії для drilldown-компонентів.
 export const getHierarchy = async (user, filters) => {
   const roleFilter = buildSalesWhere(user);
   const filter = buildRequestWhere(filters, roleFilter);
@@ -82,6 +102,7 @@ export const getHierarchy = async (user, filters) => {
   return await getSalesHierarchy(filter);
 };
 
+// Дані для dropdown/checkbox фільтрів у frontend.
 export const getFilters = async (user, filters = {}) => {
   const roleFilter = buildSalesWhere(user);
 

@@ -1,5 +1,6 @@
 import * as authService from '../services/authService.js';
 
+// Приймає дані логіну, делегує перевірку сервісу та повертає токен з профілем.
 export const login = async (req, res, next) => {
   try {
     const result = await authService.loginUser(req.body);
@@ -13,6 +14,7 @@ export const login = async (req, res, next) => {
   }
 };
 
+// Змінює пароль поточного користувача (id беремо з req.user після authenticate).
 export const changePassword = async (req, res, next) => {
   try {
     const result = await authService.changeUserPassword({

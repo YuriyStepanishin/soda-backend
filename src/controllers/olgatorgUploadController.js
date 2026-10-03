@@ -1,4 +1,4 @@
-import { importSalesService } from '../services/importSalesService.js';
+import { importSalesService } from '../services/olgatorgImportSalesService.js';
 
 export const uploadSales = async (req, res) => {
   try {

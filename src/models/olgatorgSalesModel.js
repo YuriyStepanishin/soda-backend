@@ -1,5 +1,34 @@
-import { pool } from '../db/connectNeon.js';
+import { pool } from '../db/connectOlgaTorgNeon.js';
 import { buildRequestWhere } from '../utils/buildRequestWhere.js';
+
+// Явний список зберігає поточний контракт API, але не змушує PostgreSQL
+// повертати службові або випадково додані поля таблиці.
+const SALES_COLUMNS = `
+  id,
+  sale_date,
+  tm,
+  product_name,
+  barcode,
+  weight,
+  qty,
+  amount,
+  client_code,
+  client_name,
+  address,
+  outlet_name,
+  outlet_code,
+  agent_name,
+  created_at,
+  month,
+  volume,
+  outlet_type,
+  supervisor_name,
+  price,
+  discount,
+  alt_name,
+  price_type,
+  department
+`;
 
 const SALES_INSERT_QUERY = `
   INSERT INTO sales (
@@ -62,7 +91,7 @@ export const findAllSales = async (filter, { page, limit }) => {
 
   const result = await pool.query(
     `
-    SELECT *
+    SELECT ${SALES_COLUMNS}
     FROM sales
     ${filter.where}
   ORDER BY sale_date DESC, id DESC
@@ -108,7 +137,7 @@ export const countSales = async (filter) => {
 export const findSaleById = async (id) => {
   const result = await pool.query(
     `
-    SELECT *
+    SELECT ${SALES_COLUMNS}
     FROM sales
     WHERE id = $1
     `,
@@ -121,7 +150,7 @@ export const findSaleById = async (id) => {
 export const getSalesByPeriod = async (dateFrom, dateTo) => {
   const result = await pool.query(
     `
-    SELECT *
+    SELECT ${SALES_COLUMNS}
     FROM sales
     WHERE sale_date BETWEEN $1 AND $2
     ORDER BY sale_date DESC, id DESC
@@ -191,25 +220,15 @@ export const replaceAllSales = async (rows) => {
 export const getSalesSummary = async (filter) => {
   const result = await pool.query(
     `
-    WITH brand_sales AS (
-      SELECT
-        tm,
-        COALESCE(outlet_code, client_code) AS outlet_id,
-        SUM(amount) AS outlet_amount,
-       SUM(qty * weight) AS outlet_weight
-      FROM sales
-      ${filter.where}
-      GROUP BY
-        tm,
-        COALESCE(outlet_code, client_code)
-    )
-
     SELECT
       tm,
-      COUNT(DISTINCT outlet_id)::int AS stores,
-      ROUND(SUM(outlet_weight)::numeric, 2) AS weight,
-      ROUND(SUM(outlet_amount)::numeric, 2) AS amount
-    FROM brand_sales
+      COUNT(DISTINCT COALESCE(NULLIF(TRIM(alt_name), ''), NULLIF(TRIM(outlet_name), ''), NULLIF(TRIM(client_name), '')))::int AS stores,
+      ROUND(COALESCE(SUM(qty), 0)::numeric, 2) AS quantity,
+      ROUND(COALESCE(SUM(qty * weight), 0)::numeric, 2) AS weight,
+      COUNT(*)::int AS sku,
+      ROUND(COALESCE(SUM(amount), 0)::numeric, 2) AS amount
+    FROM sales
+    ${filter.where}
     GROUP BY tm
     ORDER BY amount DESC
     `,
@@ -222,27 +241,14 @@ export const getSalesSummary = async (filter) => {
 export const getSalesTotals = async (filter) => {
   const result = await pool.query(
     `
-    WITH brand_sales AS (
-      SELECT
-        tm,
-        COALESCE(outlet_code, client_code) AS outlet_id,
-        SUM(amount) AS outlet_amount,
-       SUM(qty * weight) AS outlet_weight
-      FROM sales
-      ${filter.where}
-      GROUP BY
-        tm,
-        COALESCE(outlet_code, client_code)
-    )
-
     SELECT
-      COUNT(DISTINCT outlet_id)::int AS stores,
-
-      ROUND(SUM(outlet_weight)::numeric, 2) AS weight,
-
-      ROUND(SUM(outlet_amount)::numeric, 2) AS amount
-
-    FROM brand_sales
+      COUNT(DISTINCT COALESCE(NULLIF(TRIM(alt_name), ''), NULLIF(TRIM(outlet_name), ''), NULLIF(TRIM(client_name), '')))::int AS stores,
+      ROUND(COALESCE(SUM(qty), 0)::numeric, 2) AS quantity,
+      ROUND(COALESCE(SUM(qty * weight), 0)::numeric, 2) AS weight,
+      COUNT(*)::int AS sku,
+      ROUND(COALESCE(SUM(amount), 0)::numeric, 2) AS amount
+    FROM sales
+    ${filter.where}
     `,
     filter.params,
   );
@@ -261,7 +267,7 @@ export const getStoresSummary = async (filter) => {
 
       ROUND(SUM(qty * weight)::numeric, 2) AS weight,
 
-      COUNT(DISTINCT product_name)::int AS sku
+      COUNT(*)::int AS sku
 
     FROM sales
 
@@ -307,7 +313,7 @@ export const getStoreDates = async (filter) => {
       ROUND(SUM(amount)::numeric, 2) AS sum,
       ROUND(SUM(qty)::numeric, 2) AS quantity,
       ROUND(SUM(qty * weight)::numeric, 2) AS weight,
-      COUNT(DISTINCT product_name)::int AS sku
+      COUNT(*)::int AS sku
 
     FROM sales
 
@@ -377,7 +383,7 @@ export const getSalesHierarchy = async (filter) => {
       ROUND(SUM(qty)::numeric, 2) AS quantity,
       ROUND(SUM(qty * weight)::numeric, 2) AS weight,
 
-      COUNT(DISTINCT product_name)::int AS sku
+      COUNT(*)::int AS sku
 
     FROM sales
 
@@ -430,7 +436,7 @@ export const getSalesHierarchy = async (filter) => {
         quantity: 0,
         weight: 0,
         stores: new Set(),
-        dates: [],
+        dates: {},
       };
     }
 
@@ -565,13 +571,12 @@ const getEmployeeFilters = async (filters, roleFilter) => {
   const agentsFilter = buildFilter(filters, roleFilter, 'agent');
   const storesFilter = buildFilter(filters, roleFilter, 'stores');
 
-  const [departments, agents, stores, agentsByDepartment] =
-    await Promise.all([
-      getDepartments(departmentsFilter),
-      getAgents(agentsFilter),
-      getStores(storesFilter),
-      getAgentsByDepartment(agentsFilter),
-    ]);
+  const [departments, agents, stores, agentsByDepartment] = await Promise.all([
+    getDepartments(departmentsFilter),
+    getAgents(agentsFilter),
+    getStores(storesFilter),
+    getAgentsByDepartment(agentsFilter),
+  ]);
 
   return {
     departments,
@@ -580,7 +585,6 @@ const getEmployeeFilters = async (filters, roleFilter) => {
     stores,
   };
 };
-
 
 const getBrands = async (filter) => {
   const result = await pool.query(
@@ -609,7 +613,6 @@ const getProducts = async (filter) => {
 
   return result.rows.map((r) => r.product_name).filter(Boolean);
 };
-
 
 const getProductFilters = async (filters, roleFilter) => {
   const brandsFilter = buildRequestWhere(
@@ -646,8 +649,6 @@ const getProductFilters = async (filters, roleFilter) => {
   };
 };
 
-
-
 export const getFiltersData = async (filters, roleFilter) => {
   const [employeeFilters, productFilters] = await Promise.all([
     getEmployeeFilters(filters, roleFilter),
@@ -658,4 +659,64 @@ export const getFiltersData = async (filters, roleFilter) => {
     ...employeeFilters,
     ...productFilters,
   };
+};
+
+const DRILLDOWN_CONFIG = {
+  store: {
+    selectExpr:
+      "COALESCE(NULLIF(TRIM(alt_name), ''), NULLIF(TRIM(outlet_name), ''), NULLIF(TRIM(client_name), ''), 'Без ТТ')",
+    responseField: 'storeName',
+    orderBy: 'amount DESC, group_value ASC',
+  },
+  brand: {
+    selectExpr: "COALESCE(NULLIF(TRIM(tm), ''), 'Без ТМ')",
+    responseField: 'tm',
+    orderBy: 'amount DESC, group_value ASC',
+  },
+  product: {
+    selectExpr: "COALESCE(NULLIF(TRIM(product_name), ''), 'Без товару')",
+    responseField: 'productName',
+    orderBy: 'amount DESC, group_value ASC',
+  },
+  date: {
+    selectExpr: "TO_CHAR(sale_date::date, 'YYYY-MM-DD')",
+    responseField: 'date',
+    orderBy: 'group_value DESC',
+  },
+};
+
+export const getSalesDrilldown = async (groupBy, filter) => {
+  const config = DRILLDOWN_CONFIG[groupBy];
+
+  if (!config) {
+    throw new Error('Unsupported groupBy');
+  }
+
+  const result = await pool.query(
+    `
+    SELECT
+      ${config.selectExpr} AS group_value,
+      COUNT(DISTINCT COALESCE(NULLIF(TRIM(alt_name), ''), NULLIF(TRIM(outlet_name), ''), NULLIF(TRIM(client_name), '')))::int AS stores,
+      ROUND(COALESCE(SUM(qty), 0)::numeric, 2) AS quantity,
+      ROUND(COALESCE(SUM(qty * weight), 0)::numeric, 2) AS weight,
+      COUNT(*)::int AS sku,
+      ROUND(COALESCE(SUM(amount), 0)::numeric, 2) AS amount,
+      ROUND(COALESCE(AVG(NULLIF(price, 0)), 0)::numeric, 2) AS "averagePrice"
+    FROM sales
+    ${filter.where}
+    GROUP BY ${config.selectExpr}
+    ORDER BY ${config.orderBy}
+    `,
+    filter.params,
+  );
+
+  return result.rows.map((row) => ({
+    [config.responseField]: row.group_value,
+    stores: row.stores,
+    quantity: row.quantity,
+    weight: row.weight,
+    sku: row.sku,
+    amount: row.amount,
+    averagePrice: row.averagePrice,
+  }));
 };

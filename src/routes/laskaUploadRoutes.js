@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import multer from 'multer';
 
-import { uploadSales } from '../controllers/uploadController.js';
+import { uploadLaskaSales } from '../controllers/laskaUploadController.js';
 import { authenticate } from '../middleware/authenticate.js';
 import { authorize } from '../middleware/authorize.js';
 import { ROLES } from '../constants/roles.js';
@@ -15,9 +15,9 @@ const upload = multer({
 router.post(
   '/',
   authenticate,
-  authorize(ROLES.ADMIN, ROLES.MANAGER),
+  authorize(ROLES.ADMIN),
   upload.single('file'),
-  uploadSales,
+  uploadLaskaSales,
 );
 
 export default router;

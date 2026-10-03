@@ -1,7 +1,7 @@
 import XLSX from 'xlsx';
-import { pool } from '../db/connectNeon.js';
+import { pool } from '../db/connectOlgaTorgNeon.js';
 import { excelDateToJSDate } from '../utils/excelDateToJSDate.js';
-import { AGENT_DEPARTMENTS } from '../constants/agentDepartments.js';
+import { AGENT_DEPARTMENTS } from '../constants/olgatorgAgentDepartments.js';
 
 const normalizeVolume = (value) => {
   if (value == null || value === '') {
@@ -28,7 +28,15 @@ export const importSalesService = async (filePath) => {
   });
   const dataRows = rows
     .slice(4)
-    .filter((row) => row && row[1] && row[3] && row[8]);
+    .filter(
+      (row) =>
+        row &&
+        row[1] &&
+        row[3] &&
+        row[8] !== undefined &&
+        row[8] !== null &&
+        row[8] !== '',
+    );
 
   console.log('Всього рядків:', rows.length);
   console.log('Рядків для імпорту:', dataRows.length);
@@ -133,20 +141,32 @@ export const importSalesService = async (filePath) => {
 
       if (productPrice) {
         const { retailPrice, bplPrice, bpl5Price, bpl8Price } = productPrice;
+        const hasRetailPrice = Number.isFinite(retailPrice) && retailPrice > 0;
 
         if (amount === 0) {
           discount = 'Повернення';
           priceType = 'Повернення';
+        } else if (!hasRetailPrice) {
+          console.log('INVALID RETAIL PRICE:', productName);
         } else if (price >= retailPrice) {
           discount = 'Роздріб';
           priceType = 'Роздріб';
-        } else if (Math.abs(price - bplPrice) < 0.01) {
+        } else if (
+          Number.isFinite(bplPrice) &&
+          Math.abs(price - bplPrice) < 0.01
+        ) {
           discount = 'БПЛ';
           priceType = 'БПЛ';
-        } else if (Math.abs(price - bpl5Price) < 0.01) {
+        } else if (
+          Number.isFinite(bpl5Price) &&
+          Math.abs(price - bpl5Price) < 0.01
+        ) {
           discount = 'БПЛ -5%';
           priceType = 'БПЛ -5%';
-        } else if (Math.abs(price - bpl8Price) < 0.01) {
+        } else if (
+          Number.isFinite(bpl8Price) &&
+          Math.abs(price - bpl8Price) < 0.01
+        ) {
           discount = 'БПЛ -8%';
           priceType = 'БПЛ -8%';
         } else {
@@ -223,9 +243,9 @@ export const importSalesService = async (filePath) => {
 
     `;
 
-    await pool.query(query, values);
+    const result = await pool.query(query, values);
 
-    inserted += batch.length;
+    inserted += result.rowCount;
 
     console.log(`Processed: ${inserted} / ${dataRows.length}`);
   }

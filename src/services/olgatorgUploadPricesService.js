@@ -1,5 +1,5 @@
 import XLSX from 'xlsx';
-import { pool } from '../db/connectNeon.js';
+import { pool } from '../db/connectOlgaTorgNeon.js';
 
 const PRICE_TYPES = {
   Роздріб: 1,

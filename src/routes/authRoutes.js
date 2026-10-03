@@ -9,7 +9,9 @@ import {
 
 const router = Router();
 
+// Авторизація: валідація тіла -> контролер логіну.
 router.post('/login', validateBody(loginSchema), login);
+// Зміна пароля: спочатку JWT-автентифікація, далі валідація тіла, потім контролер.
 router.post(
   '/change-password',
   authenticate,

@@ -1,4 +1,4 @@
-import { pool } from '../db/connectNeon.js';
+import { pool } from '../db/connectOlgaTorgNeon.js';
 
 export const createSyncRecord = async ({
   fileType,
@@ -33,6 +33,21 @@ export const getLastSync = async (fileType) => {
     LIMIT 1
     `,
     [fileType],
+  );
+
+  return result.rows[0];
+};
+
+
+export const getSyncByFileId = async (fileType, fileId) => {
+  const result = await pool.query(
+    `
+    SELECT *
+    FROM sync_history
+    WHERE file_type = $1 AND file_id = $2
+    LIMIT 1
+    `,
+    [fileType, fileId],
   );
 
   return result.rows[0];

@@ -1,26 +1,12 @@
 import fs from 'fs';
 import path from 'path';
-import { google } from 'googleapis';
 import { fileURLToPath } from 'url';
+import { drive } from '../config/googleDrive.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const projectRoot = path.resolve(__dirname, '../..');
 const uploadsDir = path.join(projectRoot, 'uploads');
-const serviceAccountPath = path.join(
-  projectRoot,
-  'google-service-account.json',
-);
-
-const auth = new google.auth.GoogleAuth({
-  keyFile: serviceAccountPath,
-  scopes: ['https://www.googleapis.com/auth/drive'],
-});
-
-const drive = google.drive({
-  version: 'v3',
-  auth,
-});
 
 export async function getExcelFiles() {
   if (!process.env.UPLOADS_FOLDER_ID) {

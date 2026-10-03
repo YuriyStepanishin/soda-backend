@@ -6,11 +6,12 @@ import {
   findUserById,
   updateUserPasswordById,
 } from '../models/userModel.js';
-import { getUserProfile } from '../config/users.js';
+import { getUserProfile } from '../config/olgatorgUsers.js';
 import { ROLES } from '../constants/roles.js';
 
 const VALID_ROLES = new Set(Object.values(ROLES));
 
+// Єдине правило пріоритезації ролі: спершу роль із БД, якщо невалідна — з профілю.
 const resolveRole = (dbRole, profileRole) => {
   if (VALID_ROLES.has(dbRole)) {
     return dbRole;
@@ -23,6 +24,7 @@ const resolveRole = (dbRole, profileRole) => {
   return null;
 };
 
+// Повний цикл логіну: перевірка користувача, пароля, ролі та видача JWT.
 export const loginUser = async ({ email, password }) => {
   const normalizedEmail = email.trim().toLowerCase();
 
@@ -70,6 +72,7 @@ export const loginUser = async ({ email, password }) => {
   };
 };
 
+// Формує безпечний auth-контекст користувача для middleware authenticate.
 export const getAuthContextByEmail = async (email) => {
   const normalizedEmail = email.trim().toLowerCase();
   const user = await findUserByEmail(normalizedEmail);
@@ -96,6 +99,7 @@ export const getAuthContextByEmail = async (email) => {
   };
 };
 
+// Перевіряє старий пароль і зберігає новий хеш пароля.
 export const changeUserPassword = async ({
   userId,
   currentPassword,

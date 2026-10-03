@@ -5,7 +5,7 @@ const DB_TIMEZONE = process.env.DB_TIMEZONE || 'Europe/Kyiv';
 
 const buildConnectionString = (rawConnectionString) => {
   if (!rawConnectionString) {
-    throw new Error('NEON_URL is not set');
+    throw new Error('OLGATORG_NEON_URL is not set');
   }
 
   try {
@@ -33,17 +33,17 @@ const buildConnectionString = (rawConnectionString) => {
 };
 
 export const pool = new Pool({
-  connectionString: buildConnectionString(process.env.NEON_URL),
+  connectionString: buildConnectionString(process.env.OLGATORG_NEON_URL),
 });
 
 export const connectDB = async () => {
   try {
     const result = await pool.query('SELECT NOW()');
 
-    console.log("✅ З'єднання з PostgreSQL успішно встановлено");
+    console.log("✅ З'єднання з OLGATORG_NEON успішно встановлено");
     console.log(result.rows[0]);
   } catch (error) {
-    console.error('❌ Помилка підключення до PostgreSQL:', error.message);
+    console.error('❌ Помилка підключення до OLGATORG_NEON:', error.message);
     process.exit(1);
   }
 };

@@ -1,4 +1,4 @@
-import { pool } from '../db/connectNeon.js';
+import { pool } from '../db/connectOlgaTorgNeon.js';
 
 export const findUserById = async (id) => {
   const result = await pool.query('SELECT * FROM users WHERE id = $1', [id]);

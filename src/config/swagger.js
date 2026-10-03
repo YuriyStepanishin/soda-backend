@@ -14,10 +14,12 @@ export const swaggerSpec = {
   tags: [
     { name: 'Health' },
     { name: 'Auth' },
-    { name: 'Sales' },
-    { name: 'Uploads' },
-    { name: 'Google Drive' },
-    { name: 'Imports' },
+    { name: 'OLGATORG Sales' },
+    { name: 'OLGATORG Uploads' },
+    { name: 'OLGATORG Google Drive' },
+    { name: 'OLGATORG Imports' },
+    { name: 'LASKA Sales' },
+    { name: 'LASKA Dictionary' },
   ],
   components: {
     securitySchemes: {
@@ -186,10 +188,78 @@ export const swaggerSpec = {
         },
       },
     },
+    '/api/laska/sales': {
+      get: {
+        tags: ['LASKA Sales'],
+        summary: 'Get LASKA sales list with filters and pagination',
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: 'dateFrom',
+            in: 'query',
+            schema: { type: 'string', format: 'date' },
+          },
+          {
+            name: 'dateTo',
+            in: 'query',
+            schema: { type: 'string', format: 'date' },
+          },
+          { name: 'ta', in: 'query', schema: { type: 'string' } },
+          { name: 'department', in: 'query', schema: { type: 'string' } },
+          { name: 'route', in: 'query', schema: { type: 'string' } },
+          { name: 'storeCode', in: 'query', schema: { type: 'string' } },
+          { name: 'manufacturer', in: 'query', schema: { type: 'string' } },
+          { name: 'tm', in: 'query', schema: { type: 'string' } },
+          { name: 'group', in: 'query', schema: { type: 'string' } },
+          { name: 'subgroup', in: 'query', schema: { type: 'string' } },
+          {
+            name: 'limit',
+            in: 'query',
+            schema: { type: 'integer', minimum: 1 },
+          },
+        ],
+        responses: {
+          200: { description: 'LASKA sales list' },
+          401: { description: 'Unauthorized' },
+          500: { description: 'Server error' },
+        },
+      },
+    },
+    '/api/laska/upload': {
+      post: {
+        tags: ['LASKA Sales'],
+        summary: 'Append LASKA sales from Excel starting at row 6',
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            'multipart/form-data': {
+              schema: {
+                type: 'object',
+                required: ['file'],
+                properties: {
+                  file: {
+                    type: 'string',
+                    format: 'binary',
+                  },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          200: { description: 'LASKA sales appended' },
+          400: { description: 'Excel file is required' },
+          401: { description: 'Unauthorized' },
+          403: { description: 'Admin only' },
+          500: { description: 'Server error' },
+        },
+      },
+    },
     '/api/sales': {
       get: {
-        tags: ['Sales'],
-        summary: 'Get sales list with filters and pagination',
+        tags: ['OLGATORG Sales'],
+        summary: 'Get OLGATORG sales list with filters and pagination',
         security: [{ bearerAuth: [] }],
         parameters: [
           {
@@ -246,8 +316,8 @@ export const swaggerSpec = {
     },
     '/api/sales/{salesId}': {
       get: {
-        tags: ['Sales'],
-        summary: 'Get sale by id',
+        tags: ['OLGATORG Sales'],
+        summary: 'Get OLGATORG sale by id',
         security: [{ bearerAuth: [] }],
         parameters: [
           {
@@ -277,10 +347,34 @@ export const swaggerSpec = {
         },
       },
     },
+    '/api/laska/dictionary/agents': {
+      post: {
+        tags: ['LASKA Dictionary'],
+        summary: 'Import LASKA agent dictionary from local Excel file',
+        security: [{ bearerAuth: [] }],
+        responses: {
+          200: { description: 'Import completed' },
+          401: { description: 'Unauthorized' },
+          500: { description: 'Server error' },
+        },
+      },
+    },
+    '/api/laska/dictionary/products': {
+      post: {
+        tags: ['LASKA Dictionary'],
+        summary: 'Import LASKA product dictionary from local Excel file',
+        security: [{ bearerAuth: [] }],
+        responses: {
+          200: { description: 'Import completed' },
+          401: { description: 'Unauthorized' },
+          500: { description: 'Server error' },
+        },
+      },
+    },
     '/api/upload': {
       post: {
-        tags: ['Uploads'],
-        summary: 'Upload sales Excel file',
+        tags: ['OLGATORG Uploads'],
+        summary: 'Upload OLGATORG sales Excel file',
         security: [{ bearerAuth: [] }],
         requestBody: {
           required: true,
@@ -321,7 +415,7 @@ export const swaggerSpec = {
     },
     '/api/upload/photos': {
       post: {
-        tags: ['Uploads'],
+        tags: ['OLGATORG Uploads'],
         summary: 'Upload image to Cloudinary',
         security: [{ bearerAuth: [] }],
         requestBody: {
@@ -371,8 +465,8 @@ export const swaggerSpec = {
     },
     '/api/prices/upload': {
       post: {
-        tags: ['Uploads'],
-        summary: 'Upload prices Excel file',
+        tags: ['OLGATORG Uploads'],
+        summary: 'Upload OLGATORG prices Excel file',
         security: [{ bearerAuth: [] }],
         requestBody: {
           required: true,
@@ -413,8 +507,8 @@ export const swaggerSpec = {
     },
     '/api/google-drive': {
       get: {
-        tags: ['Google Drive'],
-        summary: 'Get source Excel files from Google Drive folder',
+        tags: ['OLGATORG Google Drive'],
+        summary: 'Get source Excel files from OLGATORG Google Drive folder',
         security: [{ bearerAuth: [] }],
         responses: {
           200: {
@@ -441,8 +535,8 @@ export const swaggerSpec = {
     },
     '/api/imports/run': {
       get: {
-        tags: ['Imports'],
-        summary: 'Run Google Drive import flow',
+        tags: ['OLGATORG Imports'],
+        summary: 'Run OLGATORG Google Drive import flow',
         security: [{ bearerAuth: [] }],
         responses: {
           200: {

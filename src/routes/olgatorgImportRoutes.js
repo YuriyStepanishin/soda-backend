@@ -1,6 +1,6 @@
 import { Router } from 'express';
 
-import { runImport } from '../controllers/importController.js';
+import { runImport } from '../controllers/olgatorgImportController.js';
 
 import { authenticate } from '../middleware/authenticate.js';
 import { authorize } from '../middleware/authorize.js';

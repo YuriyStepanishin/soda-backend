@@ -1,4 +1,4 @@
-import { pool } from '../db/connectNeon.js';
+import { pool } from '../db/connectOlgaTorgNeon.js';
 
 let tableReady = false;
 

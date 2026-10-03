@@ -3,31 +3,26 @@ import 'dotenv/config';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import swaggerUi from 'swagger-ui-express';
-import cron from 'node-cron';
 
 import { errors } from 'celebrate';
-import { connectDB } from './db/connectNeon.js';
+import { connectDB } from './db/connectOlgaTorgNeon.js';
 import { logger } from './utils/logger.js';
+import { registerImportSchedules } from './services/registerImportSchedules.js';
 import { notFoundHandler } from './middleware/notFoundHandler.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { swaggerSpec } from './config/swagger.js';
-import { processGoogleDriveImports } from './services/processGoogleDriveImports.js';
 
 import authRoutes from './routes/authRoutes.js';
-import salesRoutes from './routes/salesRoutes.js';
-import uploadRoutes from './routes/uploadRoutes.js';
-import googleDriveRoutes from './routes/googleDriveRoutes.js';
-import priceRoutes from './routes/priceRoutes.js';
-import importRoutes from './routes/importRoutes.js';
+import salesRoutes from './routes/olgatorgSalesRoutes.js';
+import uploadRoutes from './routes/olgatorgUploadRoutes.js';
+import googleDriveRoutes from './routes/olgatorgGoogleDriveRoutes.js';
+import priceRoutes from './routes/olgatorgPriceRoutes.js';
+import importRoutes from './routes/olgatorgImportRoutes.js';
 import uploadPhotosRoutes from './routes/uploadPhotos.js';
-
-const APP_TIMEZONE = process.env.APP_TIMEZONE || 'Europe/Kyiv';
-process.env.TZ = process.env.TZ || APP_TIMEZONE;
-const IMPORT_CRON_ENABLED =
-  (process.env.IMPORT_CRON_ENABLED || 'true').toLowerCase() === 'true';
-const IMPORT_CRON_SCHEDULE = process.env.IMPORT_CRON_SCHEDULE || '*/5 * * * *';
-
-let isImportRunning = false;
+import laskaDictionaryRoutes from './routes/laskaDictionaryRoutes.js';
+import laskaSalesRoutes from './routes/laskaSalesRoutes.js';
+import laskaUploadRoutes from './routes/laskaUploadRoutes.js';
+import laskaImportRoutes from './routes/laskaImportRoutes.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -49,6 +44,10 @@ app.use('/api/upload/photos', uploadPhotosRoutes);
 app.use('/api/google-drive', googleDriveRoutes);
 app.use('/api/prices', priceRoutes);
 app.use('/api/imports', importRoutes);
+app.use('/api/laska/dictionary', laskaDictionaryRoutes);
+app.use('/api/laska/sales', laskaSalesRoutes);
+app.use('/api/laska/upload', laskaUploadRoutes);
+app.use('/api/laska/imports', laskaImportRoutes);
 
 app.get('/', (req, res) => {
   res.json({
@@ -62,40 +61,7 @@ app.use(errorHandler); // Глобальний обробник помилок
 
 try {
   await connectDB();
-
-  if (IMPORT_CRON_ENABLED) {
-    cron.schedule(
-      IMPORT_CRON_SCHEDULE,
-      async () => {
-        if (isImportRunning) {
-          console.log(
-            '[Import Cron] Previous run still in progress, skip tick',
-          );
-
-          return;
-        }
-
-        isImportRunning = true;
-
-        try {
-          const summary = await processGoogleDriveImports();
-
-          console.log('[Import Cron] Completed:', summary);
-        } catch (error) {
-          console.error('[Import Cron] Failed:', error.message);
-        } finally {
-          isImportRunning = false;
-        }
-      },
-      {
-        timezone: APP_TIMEZONE,
-      },
-    );
-
-    console.log(
-      `[Import Cron] Enabled with schedule "${IMPORT_CRON_SCHEDULE}" (${APP_TIMEZONE})`,
-    );
-  }
+  registerImportSchedules();
 
   app.listen(PORT, () => {
     console.log(`Сервер запущено на порту ${PORT}`);

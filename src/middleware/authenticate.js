@@ -1,6 +1,7 @@
 import jwt from 'jsonwebtoken';
 import { getAuthContextByEmail } from '../services/authService.js';
 
+// Перевіряє Bearer JWT, підтягує user-контекст і кладе його в req.user.
 export const authenticate = async (req, res, next) => {
   const authHeader = req.headers.authorization;
 
@@ -21,6 +22,7 @@ export const authenticate = async (req, res, next) => {
   }
 
   try {
+    // Верифікуємо токен і відновлюємо актуальні права з БД/конфіга.
     const payload = jwt.verify(token, process.env.JWT_SECRET);
 
     const userContext = await getAuthContextByEmail(payload.email);
