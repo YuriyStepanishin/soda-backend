@@ -1,13 +1,10 @@
-import { Router } from 'express';
+import { createImportController } from '../modules/imports/import.controller.js';
+import { createImportRouter } from '../modules/imports/import.routes.js';
+import { processGoogleDriveImports } from '../services/olgatorgProcessGoogleDriveImports.js';
 
-import { runImport } from '../controllers/olgatorgImportController.js';
+const runImport = createImportController({
+  runImport: processGoogleDriveImports,
+  successMessage: 'Import completed',
+});
 
-import { authenticate } from '../middleware/authenticate.js';
-import { authorize } from '../middleware/authorize.js';
-import { ROLES } from '../constants/roles.js';
-
-const router = Router();
-
-router.get('/run', authenticate, authorize(ROLES.ADMIN), runImport);
-
-export default router;
+export default createImportRouter({ method: 'get', handler: runImport });

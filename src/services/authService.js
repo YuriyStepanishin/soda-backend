@@ -6,12 +6,12 @@ import {
   findUserById,
   updateUserPasswordById,
 } from '../models/userModel.js';
-import { getUserProfile } from '../config/olgatorgUsers.js';
+
+import { getUserProfile } from '../services/userProfileService.js';
 import { ROLES } from '../constants/roles.js';
 
 const VALID_ROLES = new Set(Object.values(ROLES));
 
-// Єдине правило пріоритезації ролі: спершу роль із БД, якщо невалідна — з профілю.
 const resolveRole = (dbRole, profileRole) => {
   if (VALID_ROLES.has(dbRole)) {
     return dbRole;
@@ -24,15 +24,68 @@ const resolveRole = (dbRole, profileRole) => {
   return null;
 };
 
-// Повний цикл логіну: перевірка користувача, пароля, ролі та видача JWT.
-export const loginUser = async ({ email, password }) => {
-  const normalizedEmail = email.trim().toLowerCase();
+const getAuthTenant = (profile, role) => {
+  return role === ROLES.ADMIN ? profile.tenantAdmin : profile.tenant;
+};
 
-  const user = await findUserByEmail(normalizedEmail);
+const buildUserContext = ({ user, profile, role }) => ({
+  id: user.id,
+  email: user.email,
+  role,
+  ...(role === ROLES.ADMIN
+    ? { tenantAdmin: profile.tenantAdmin }
+    : { tenant: profile.tenant }),
+  department: profile.department,
+  departments: profile.departments || [],
+  representative: profile.representative,
+  brands: profile.brands || [],
+});
+
+const createToken = ({ id, email }) =>
+  jwt.sign({ id, email }, process.env.JWT_SECRET, { expiresIn: '7d' });
+
+const getAuthenticatedUser = async (email) => {
+  const normalizedEmail = email.trim().toLowerCase();
+  const profile = getUserProfile(normalizedEmail);
+
+  if (!profile || !VALID_ROLES.has(profile.role)) {
+    return null;
+  }
+
+  const authTenant = getAuthTenant(profile, profile.role);
+
+  if (!authTenant) {
+    return null;
+  }
+
+  const user = await findUserByEmail(authTenant, normalizedEmail);
 
   if (!user) {
+    return null;
+  }
+
+  const role = resolveRole(user.role, profile.role);
+
+  if (!role) {
+    return null;
+  }
+
+  return {
+    user,
+    profile,
+    role,
+    authTenant,
+  };
+};
+
+export const loginUser = async ({ email, password }) => {
+  const authenticated = await getAuthenticatedUser(email);
+
+  if (!authenticated) {
     throw new Error('Invalid credentials');
   }
+
+  const { user, profile, role } = authenticated;
 
   const isMatch = await bcrypt.compare(password, user.password_hash);
 
@@ -40,89 +93,69 @@ export const loginUser = async ({ email, password }) => {
     throw new Error('Invalid credentials');
   }
 
-  const profile = getUserProfile(normalizedEmail);
-  const resolvedRole = resolveRole(user.role, profile?.role);
-
-  if (!resolvedRole) {
-    throw new Error('Access denied');
-  }
-
-  const token = jwt.sign(
-    {
-      id: user.id,
-      email: user.email,
-    },
-    process.env.JWT_SECRET,
-    {
-      expiresIn: '7d',
-    },
-  );
+  const token = createToken({
+    id: user.id,
+    email: user.email,
+  });
 
   return {
     token,
-    user: {
-      id: user.id,
-      email: user.email,
-      role: resolvedRole,
-      department: profile?.department,
-      departments: profile?.departments || [],
-      representative: profile?.representative,
-      brands: profile?.brands || [],
-    },
+    user: buildUserContext({
+      user,
+      profile,
+      role,
+    }),
   };
 };
 
-// Формує безпечний auth-контекст користувача для middleware authenticate.
 export const getAuthContextByEmail = async (email) => {
-  const normalizedEmail = email.trim().toLowerCase();
-  const user = await findUserByEmail(normalizedEmail);
+  const authenticated = await getAuthenticatedUser(email);
 
-  if (!user) {
+  if (!authenticated) {
     return null;
   }
 
-  const profile = getUserProfile(normalizedEmail);
-  const resolvedRole = resolveRole(user.role, profile?.role);
+  const { user, profile, role } = authenticated;
 
-  if (!resolvedRole) {
-    return null;
-  }
-
-  return {
-    id: user.id,
-    email: user.email,
-    role: resolvedRole,
-    department: profile?.department,
-    departments: profile?.departments || [],
-    representative: profile?.representative,
-    brands: profile?.brands || [],
-  };
+  return buildUserContext({
+    user,
+    profile,
+    role,
+  });
 };
 
-// Перевіряє старий пароль і зберігає новий хеш пароля.
 export const changeUserPassword = async ({
-  userId,
+  user,
   currentPassword,
   newPassword,
 }) => {
-  const user = await findUserById(userId);
+  const tenant = user.role === ROLES.ADMIN ? user.tenantAdmin : user.tenant;
 
-  if (!user) {
+  if (!tenant) {
+    throw new Error('Authentication tenant is not configured');
+  }
+
+  const dbUser = await findUserById(tenant, user.id);
+
+  if (!dbUser) {
     throw new Error('User not found');
   }
 
-  const isMatch = await bcrypt.compare(currentPassword, user.password_hash);
+  const isMatch = await bcrypt.compare(currentPassword, dbUser.password_hash);
 
   if (!isMatch) {
     throw new Error('Current password is invalid');
   }
 
-  const newPasswordHash = await bcrypt.hash(newPassword, 10);
+  const passwordHash = await bcrypt.hash(newPassword, 10);
 
   await updateUserPasswordById({
-    id: user.id,
-    passwordHash: newPasswordHash,
+    tenant,
+    id: dbUser.id,
+    passwordHash,
   });
 
-  return { updated: true };
+  return {
+    updated: true,
+  };
 };

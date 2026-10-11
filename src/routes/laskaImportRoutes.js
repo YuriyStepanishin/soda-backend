@@ -1,11 +1,10 @@
-import { Router } from 'express';
-import { runLaskaImport } from '../controllers/laskaImportController.js';
-import { authenticate } from '../middleware/authenticate.js';
-import { authorize } from '../middleware/authorize.js';
-import { ROLES } from '../constants/roles.js';
+import { createImportController } from '../modules/imports/import.controller.js';
+import { createImportRouter } from '../modules/imports/import.routes.js';
+import { processLaskaGoogleDriveImports } from '../services/laskaProcessGoogleDriveImports.js';
 
-const router = Router();
+const runLaskaImport = createImportController({
+  runImport: processLaskaGoogleDriveImports,
+  successMessage: 'LASKA import completed',
+});
 
-router.post('/run', authenticate, authorize(ROLES.ADMIN), runLaskaImport);
-
-export default router;
+export default createImportRouter({ method: 'post', handler: runLaskaImport });

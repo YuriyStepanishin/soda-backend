@@ -1,5 +1,8 @@
 import XLSX from 'xlsx';
-import { laskaPool } from '../db/connectLaskaNeon.js';
+import { getPool } from '../db/index.js';
+import { refreshSalesHistoryDaily } from '../models/laskaSalesHistoryDailyModel.js';
+
+const laskaPool = getPool('laska');
 
 const BATCH_SIZE = 1000;
 
@@ -126,8 +129,6 @@ const insertBatch = async (batch) => {
         AND existing.store_code = incoming.store_code
         AND existing.product_code = incoming.product_code
         AND existing.invoice_number = incoming.invoice_number
-        AND existing.amount = incoming.amount::numeric
-        AND existing.quantity = incoming.quantity::numeric
       RETURNING 1
     ), inserted AS (
       INSERT INTO sales (${columns.join(', ')})
@@ -153,8 +154,6 @@ const insertBatch = async (batch) => {
           AND existing.store_code = incoming.store_code
           AND existing.product_code = incoming.product_code
           AND existing.invoice_number = incoming.invoice_number
-          AND existing.amount = incoming.amount::numeric
-          AND existing.quantity = incoming.quantity::numeric
       )
       RETURNING 1
     )
@@ -182,10 +181,8 @@ export const importLaskaSales = async (filePath) => {
         JSON.stringify([
           sale.saleDate,
           sale.productCode,
-          sale.amount,
           sale.storeCode,
           sale.invoiceNumber,
-          sale.quantity,
         ]),
         sale,
       ]),
@@ -200,11 +197,23 @@ export const importLaskaSales = async (filePath) => {
     updated += result.updated;
   }
 
+  const importedDates = dataRows
+    .map((sale) => sale.saleDate)
+    .filter(Boolean)
+    .sort();
+  const historyRefresh = importedDates.length
+    ? await refreshSalesHistoryDaily({
+        dateFrom: importedDates[0],
+        dateTo: importedDates[importedDates.length - 1],
+      })
+    : { refreshed: false, rows: 0 };
+
   return {
     sourceRows: sourceRows.length,
     inserted,
     updated,
     skipped: dataRows.length - inserted - updated,
+    salesHistoryDaily: historyRefresh,
     startRow: 6,
   };
 };

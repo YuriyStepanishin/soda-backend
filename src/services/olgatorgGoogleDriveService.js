@@ -1,12 +1,4 @@
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
 import { drive } from '../config/googleDrive.js';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const projectRoot = path.resolve(__dirname, '../..');
-const uploadsDir = path.join(projectRoot, 'uploads');
 
 export async function getExcelFiles() {
   if (!process.env.UPLOADS_FOLDER_ID) {
@@ -24,43 +16,5 @@ export async function getExcelFiles() {
     const name = (file.name || '').toLowerCase();
 
     return name.endsWith('.xls') || name.endsWith('.xlsx');
-  });
-}
-
-export async function downloadFile(fileId, fileName) {
-  await fs.promises.mkdir(uploadsDir, { recursive: true });
-
-  const filePath = path.join(uploadsDir, fileName);
-
-  const response = await drive.files.get(
-    {
-      fileId,
-      alt: 'media',
-      supportsAllDrives: true,
-    },
-    {
-      responseType: 'stream',
-    },
-  );
-
-  await new Promise((resolve, reject) => {
-    const dest = fs.createWriteStream(filePath);
-
-    response.data.pipe(dest).on('finish', resolve).on('error', reject);
-  });
-
-  return filePath;
-}
-
-export async function moveToArchive(fileId) {
-  if (!process.env.ARCHIVE_FOLDER_ID) {
-    throw new Error('ARCHIVE_FOLDER_ID is not configured');
-  }
-
-  await drive.files.update({
-    fileId,
-    addParents: process.env.ARCHIVE_FOLDER_ID,
-    removeParents: process.env.UPLOADS_FOLDER_ID,
-    supportsAllDrives: true,
   });
 }

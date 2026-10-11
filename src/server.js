@@ -5,7 +5,7 @@ import cookieParser from 'cookie-parser';
 import swaggerUi from 'swagger-ui-express';
 
 import { errors } from 'celebrate';
-import { connectDB } from './db/connectOlgaTorgNeon.js';
+import { connectDatabases } from './db/index.js';
 import { logger } from './utils/logger.js';
 import { registerImportSchedules } from './services/registerImportSchedules.js';
 import { notFoundHandler } from './middleware/notFoundHandler.js';
@@ -13,14 +13,13 @@ import { errorHandler } from './middleware/errorHandler.js';
 import { swaggerSpec } from './config/swagger.js';
 
 import authRoutes from './routes/authRoutes.js';
-import salesRoutes from './routes/olgatorgSalesRoutes.js';
+import salesRoutes from './routes/sales.routes.js';
 import uploadRoutes from './routes/olgatorgUploadRoutes.js';
 import googleDriveRoutes from './routes/olgatorgGoogleDriveRoutes.js';
 import priceRoutes from './routes/olgatorgPriceRoutes.js';
 import importRoutes from './routes/olgatorgImportRoutes.js';
 import uploadPhotosRoutes from './routes/uploadPhotos.js';
 import laskaDictionaryRoutes from './routes/laskaDictionaryRoutes.js';
-import laskaSalesRoutes from './routes/laskaSalesRoutes.js';
 import laskaUploadRoutes from './routes/laskaUploadRoutes.js';
 import laskaImportRoutes from './routes/laskaImportRoutes.js';
 
@@ -35,17 +34,20 @@ app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 app.get('/api-docs.json', (req, res) => {
   res.json(swaggerSpec);
 });
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'ok' });
+});
 
 // Маршрут
 app.use('/api/auth', authRoutes);
 app.use('/api/sales', salesRoutes);
+
 app.use('/api/upload', uploadRoutes);
 app.use('/api/upload/photos', uploadPhotosRoutes);
 app.use('/api/google-drive', googleDriveRoutes);
 app.use('/api/prices', priceRoutes);
 app.use('/api/imports', importRoutes);
 app.use('/api/laska/dictionary', laskaDictionaryRoutes);
-app.use('/api/laska/sales', laskaSalesRoutes);
 app.use('/api/laska/upload', laskaUploadRoutes);
 app.use('/api/laska/imports', laskaImportRoutes);
 
@@ -60,10 +62,10 @@ app.use(errors()); // Обробка помилок валідації від ce
 app.use(errorHandler); // Глобальний обробник помилок
 
 try {
-  await connectDB();
+  await connectDatabases();
   registerImportSchedules();
 
-  app.listen(PORT, () => {
+  app.listen(PORT, '0.0.0.0', () => {
     console.log(`Сервер запущено на порту ${PORT}`);
   });
 } catch (error) {

@@ -66,6 +66,7 @@ const countsFrom = (result) =>
 
 export const processDriveImports = async ({
   key,
+  tenant = 'olgatorg',
   fileType,
   prefix,
   uploadsFolderEnv,
@@ -86,7 +87,7 @@ export const processDriveImports = async ({
       let filePath;
 
       try {
-        if (await getSyncByFileId(fileType, file.id)) {
+        if (await getSyncByFileId(fileType, file.id, tenant)) {
           await moveToArchive(file.id, uploadsFolderEnv, archiveFolderEnv);
           summary.archived += 1;
           continue;
@@ -96,6 +97,7 @@ export const processDriveImports = async ({
         const counts = countsFrom(await importService(filePath));
 
         await createSyncRecord({
+          tenant,
           fileType,
           fileName: file.name,
           fileId: file.id,

@@ -1,6 +1,8 @@
 import XLSX from 'xlsx';
-import { laskaPool } from '../db/connectLaskaNeon.js';
+import { getPool } from '../db/index.js';
 import { drive } from '../config/googleDrive.js';
+
+const laskaPool = getPool('laska');
 
 const DICTIONARY_FILES = {
   agents: 'Довідник ТА+ПТТ.xlsx',

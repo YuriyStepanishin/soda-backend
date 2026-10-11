@@ -1,38 +1,37 @@
-import { ROLES } from '../constants/roles.js';
+import { ROLES } from '../../constants/roles.js';
 
 export const users = {
   'oliahrynyk32@gmail.com': {
     role: ROLES.AGENT,
+    tenant: 'olgatorg',
     department: 'Область (Центр)',
     representative: 'Гриник Ольга',
   },
 
   'storoshdiana@gmail.com': {
     role: ROLES.AGENT,
+    tenant: 'olgatorg',
     department: 'Місто',
     representative: 'Довга Діана',
   },
 
   'dyug.tany.90@gmail.com': {
     role: ROLES.AGENT,
+    tenant: 'olgatorg',
     department: "Кам'янець-Подільський відділ",
     representative: 'Дюг Тетяна',
   },
 
-  'y.stepanishin@gmail.com': {
-    role: ROLES.ADMIN,
-    department: 'Усі відділи',
-    representative: 'Юрій Степанишин',
-  },
-
   'gutovskan@gmail.com': {
     role: ROLES.MANAGER,
+    tenant: 'olgatorg',
     department: 'Усі відділи',
     representative: 'Гутовська Наталія',
   },
 
   'valentyna.korniienko@tctrade.com.ua': {
     role: ROLES.BRAND_MANAGER,
+    tenant: 'olgatorg',
     department: 'Усі відділи',
     representative: 'Корнієнко Валентина',
     brands: [
@@ -43,73 +42,86 @@ export const users = {
       'Жокей',
       'Принцеса Ява',
       'Принцеса Нурі',
-      'Принцеса Канді'
-      ],
+      'Принцеса Канді',
+    ],
   },
 
   'ivsn.denis@gmail.com': {
     role: ROLES.AGENT,
+    tenant: 'olgatorg',
     department: "Кам'янець-Подільський відділ",
     representative: 'Івасишин Денис',
   },
   'anna.stetsyuk25@gmail.com': {
     role: ROLES.AGENT,
+    tenant: 'olgatorg',
     department: 'Шепетівський відділ',
     representative: 'Кучер Аня',
   },
   'laptevahm@gmail.com': {
     role: ROLES.AGENT,
+    tenant: 'olgatorg',
     department: 'Місто',
     representative: 'Лаптєва Руслана',
   },
   'olenkapolonne@gmail.com': {
     role: ROLES.AGENT,
+    tenant: 'olgatorg',
     department: 'Шепетівський відділ',
     representative: 'Мартинчик Альона',
   },
   'glukhovska.84@gmail.com': {
     role: ROLES.AGENT,
+    tenant: 'olgatorg',
     department: 'Область (Центр)',
     representative: 'Могильна Оксана',
   },
   'svetlananagornak1984@gmail.com': {
     role: ROLES.AGENT,
+    tenant: 'olgatorg',
     department: 'Шепетівський відділ',
     representative: 'Нагорняк Світлана',
   },
   'vlad-oliynik@ukr.net': {
     role: ROLES.AGENT,
+    tenant: 'olgatorg',
     department: "Кам'янець-Подільський відділ",
     representative: 'Олійник Влад',
   },
   'alinakukolka84@gmail.com': {
     role: ROLES.AGENT,
+    tenant: 'olgatorg',
     department: 'Область (Центр)',
     representative: 'Сторожук Аліна',
   },
   'irashwetc89@gmail.com': {
     role: ROLES.AGENT,
+    tenant: 'olgatorg',
     department: 'Шепетівський відділ',
     representative: 'Швець Ірина',
   },
   'natasha14148282@icloud.com': {
     role: ROLES.AGENT,
+    tenant: 'olgatorg',
     department: 'Місто',
     representative: 'Ящишина Наталія',
   },
 
   'vkamsnskiy@gmail.com': {
     role: ROLES.SUPERVISOR,
+    tenant: 'olgatorg',
     departments: ["Кам'янець-Подільський відділ"],
     representative: 'Камінський Володимир',
   },
   'nikolya202@gmail.com': {
     role: ROLES.SUPERVISOR,
+    tenant: 'olgatorg',
     departments: ['Шепетівський відділ'],
     representative: 'Микола Швець',
   },
   'w18051985@gmail.com': {
     role: ROLES.SUPERVISOR,
+    tenant: 'olgatorg',
     departments: ['Місто', 'Область (Центр)'],
     representative: 'Токарчук Микола',
   },
@@ -118,7 +130,9 @@ export const users = {
 export const getUserProfile = (email) => {
   if (!email) return null;
 
-  return users[email.trim().toLowerCase()] || null;
+  const profile = users[email.trim().toLowerCase()];
+
+  return profile || null;
 };
 
 export const allowedEmails = Object.keys(users);
@@ -165,5 +179,5 @@ function getAgentsByDepartments(departments) {
         user.role === ROLES.AGENT && departments.includes(user.department),
     )
     .map((user) => user.representative);
-};
+}
 export { getAgentsByDepartments };

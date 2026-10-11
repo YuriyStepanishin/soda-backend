@@ -6,7 +6,7 @@ const isEnabled = (value, defaultValue) =>
   (value || defaultValue).toLowerCase() === 'true';
 
 export const registerImportSchedules = () => {
-  const timezone = process.env.APP_TIMEZONE || 'Europe/Kyiv';
+  const timezone = process.env.APP_TIMEZONE || process.env.DB_TIMEZONE;
   process.env.TZ = process.env.TZ || timezone;
 
   scheduleImport({

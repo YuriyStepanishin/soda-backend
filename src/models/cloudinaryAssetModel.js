@@ -1,4 +1,6 @@
-import { pool } from '../db/connectOlgaTorgNeon.js';
+import { getPool } from '../db/index.js';
+
+const pool = getPool('olgatorg');
 
 let tableReady = false;
 

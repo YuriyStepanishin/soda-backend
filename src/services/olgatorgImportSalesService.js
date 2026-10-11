@@ -1,7 +1,10 @@
 import XLSX from 'xlsx';
-import { pool } from '../db/connectOlgaTorgNeon.js';
+import { getPool } from '../db/index.js';
 import { excelDateToJSDate } from '../utils/excelDateToJSDate.js';
-import { AGENT_DEPARTMENTS } from '../constants/olgatorgAgentDepartments.js';
+import { AGENT_DEPARTMENTS } from '../config/tenant/olgatorg/agentDepartments.js';
+import { refreshOlgatorgRouteTmHistory } from '../models/olgatorgSalesHistoryModel.js';
+
+const pool = getPool('olgatorg');
 
 const normalizeVolume = (value) => {
   if (value == null || value === '') {
@@ -16,6 +19,11 @@ const normalizeVolume = (value) => {
 
   return normalized;
 };
+
+const dateOnly = (value) =>
+  value instanceof Date && !Number.isNaN(value.getTime())
+    ? value.toISOString().slice(0, 10)
+    : null;
 
 export const importSalesService = async (filePath) => {
   const workbook = XLSX.readFile(filePath);
@@ -248,6 +256,29 @@ export const importSalesService = async (filePath) => {
     inserted += result.rowCount;
 
     console.log(`Processed: ${inserted} / ${dataRows.length}`);
+  }
+
+  const importedDates = dataRows
+    .map((row) => dateOnly(excelDateToJSDate(row[1])))
+    .filter(Boolean)
+    .sort();
+
+  if (importedDates.length) {
+    const dateFrom = importedDates[0];
+    const dateTo = importedDates[importedDates.length - 1];
+
+    await Promise.all([
+      refreshOlgatorgRouteTmHistory({
+        periodType: 'week',
+        dateFrom,
+        dateTo,
+      }),
+      refreshOlgatorgRouteTmHistory({
+        periodType: 'month',
+        dateFrom,
+        dateTo,
+      }),
+    ]);
   }
 
   return inserted;

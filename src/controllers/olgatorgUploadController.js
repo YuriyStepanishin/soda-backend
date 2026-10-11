@@ -1,3 +1,4 @@
+import fs from 'node:fs/promises';
 import { importSalesService } from '../services/olgatorgImportSalesService.js';
 
 export const uploadSales = async (req, res) => {
@@ -13,5 +14,9 @@ export const uploadSales = async (req, res) => {
       success: false,
       message: error.message,
     });
+  } finally {
+    if (req.file?.path) {
+      await fs.unlink(req.file.path).catch(() => {});
+    }
   }
 };

@@ -14,6 +14,7 @@ export const swaggerSpec = {
   tags: [
     { name: 'Health' },
     { name: 'Auth' },
+    { name: 'Sales' },
     { name: 'OLGATORG Sales' },
     { name: 'OLGATORG Uploads' },
     { name: 'OLGATORG Google Drive' },
@@ -27,6 +28,14 @@ export const swaggerSpec = {
         type: 'http',
         scheme: 'bearer',
         bearerFormat: 'JWT',
+      },
+    },
+    parameters: {
+      tenantId: {
+        name: 'X-Tenant-Id',
+        in: 'header',
+        description: 'Select a tenant available to the authenticated user',
+        schema: { type: 'string', example: 'olgatorg' },
       },
     },
     schemas: {
@@ -62,6 +71,17 @@ export const swaggerSpec = {
           role: {
             type: 'string',
             enum: ['admin', 'manager', 'supervisor', 'agent', 'brand_manager'],
+          },
+          tenant: { type: 'string', example: 'olgatorg' },
+          availableTenants: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                id: { type: 'string', example: 'olgatorg' },
+                name: { type: 'string', example: 'OLGATORG' },
+              },
+            },
           },
           department: { type: 'string', nullable: true },
           departments: {
@@ -188,43 +208,6 @@ export const swaggerSpec = {
         },
       },
     },
-    '/api/laska/sales': {
-      get: {
-        tags: ['LASKA Sales'],
-        summary: 'Get LASKA sales list with filters and pagination',
-        security: [{ bearerAuth: [] }],
-        parameters: [
-          {
-            name: 'dateFrom',
-            in: 'query',
-            schema: { type: 'string', format: 'date' },
-          },
-          {
-            name: 'dateTo',
-            in: 'query',
-            schema: { type: 'string', format: 'date' },
-          },
-          { name: 'ta', in: 'query', schema: { type: 'string' } },
-          { name: 'department', in: 'query', schema: { type: 'string' } },
-          { name: 'route', in: 'query', schema: { type: 'string' } },
-          { name: 'storeCode', in: 'query', schema: { type: 'string' } },
-          { name: 'manufacturer', in: 'query', schema: { type: 'string' } },
-          { name: 'tm', in: 'query', schema: { type: 'string' } },
-          { name: 'group', in: 'query', schema: { type: 'string' } },
-          { name: 'subgroup', in: 'query', schema: { type: 'string' } },
-          {
-            name: 'limit',
-            in: 'query',
-            schema: { type: 'integer', minimum: 1 },
-          },
-        ],
-        responses: {
-          200: { description: 'LASKA sales list' },
-          401: { description: 'Unauthorized' },
-          500: { description: 'Server error' },
-        },
-      },
-    },
     '/api/laska/upload': {
       post: {
         tags: ['LASKA Sales'],
@@ -257,9 +240,10 @@ export const swaggerSpec = {
       },
     },
     '/api/sales': {
+      parameters: [{ $ref: '#/components/parameters/tenantId' }],
       get: {
-        tags: ['OLGATORG Sales'],
-        summary: 'Get OLGATORG sales list with filters and pagination',
+        tags: ['Sales'],
+        summary: "Get sales list for the authenticated user's tenant",
         security: [{ bearerAuth: [] }],
         parameters: [
           {
@@ -314,7 +298,199 @@ export const swaggerSpec = {
         },
       },
     },
+    '/api/sales/history': {
+      parameters: [{ $ref: '#/components/parameters/tenantId' }],
+      get: {
+        tags: ['LASKA Sales'],
+        summary: 'Get LASKA sales history by store and week or month',
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: 'period',
+            in: 'query',
+            schema: {
+              type: 'string',
+              enum: ['4weeks', '4months'],
+              default: '4weeks',
+            },
+          },
+          { name: 'ta', in: 'query', schema: { type: 'string' } },
+          { name: 'storeSearch', in: 'query', schema: { type: 'string' } },
+          {
+            name: 'groupingFields',
+            in: 'query',
+            description: 'Comma-separated fields: group, tm, subgroup, packing',
+            schema: { type: 'string', example: 'tm,group' },
+          },
+        ],
+        responses: {
+          200: {
+            description:
+              'LASKA sales history grouped by store and selected period',
+          },
+          400: { description: 'Invalid period or grouping fields' },
+          401: { description: 'Unauthorized' },
+        },
+      },
+    },
+    '/api/sales/route-history': {
+      parameters: [{ $ref: '#/components/parameters/tenantId' }],
+      get: {
+        tags: ['Sales'],
+        summary: 'Get sales route history for the selected tenant',
+        description:
+          'Currently supported for LASKA. OLGATORG returns 501 until its adapter implements route history.',
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: 'period',
+            in: 'query',
+            description: 'Invalid or omitted values default to 4weeks.',
+            schema: {
+              type: 'string',
+              enum: ['4weeks', '4months'],
+              default: '4weeks',
+            },
+          },
+          { name: 'ta', in: 'query', schema: { type: 'string' } },
+          { name: 'storeSearch', in: 'query', schema: { type: 'string' } },
+          { name: 'department', in: 'query', schema: { type: 'string' } },
+          {
+            name: 'groupingFields',
+            in: 'query',
+            description:
+              'Comma-separated grouping fields. Unsupported values are ignored; defaults to tm.',
+            schema: {
+              type: 'string',
+              example: 'group,tm',
+            },
+          },
+        ],
+        responses: {
+          200: {
+            description: 'Route history and filter data',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    success: { type: 'boolean', example: true },
+                    data: {
+                      type: 'object',
+                      properties: {
+                        periods: {
+                          type: 'array',
+                          items: {
+                            type: 'object',
+                            properties: {
+                              key: { type: 'string', example: '2026-W40' },
+                              year: { type: 'integer', example: 2026 },
+                              periodNumber: { type: 'integer', example: 40 },
+                              startDate: {
+                                type: 'string',
+                                format: 'date',
+                                example: '2026-09-28',
+                              },
+                              endDate: {
+                                type: 'string',
+                                format: 'date',
+                                example: '2026-10-04',
+                              },
+                            },
+                          },
+                        },
+                        summary: {
+                          type: 'object',
+                          properties: {
+                            allStores: { type: 'integer', example: 120 },
+                            withoutHistory: { type: 'integer', example: 8 },
+                          },
+                        },
+                        filters: {
+                          type: 'object',
+                          properties: {
+                            departments: {
+                              type: 'array',
+                              items: { type: 'string' },
+                              example: ['Місто'],
+                            },
+                            agents: {
+                              type: 'array',
+                              items: { type: 'string' },
+                              example: ['Іван Іваненко'],
+                            },
+                          },
+                        },
+                        stores: {
+                          type: 'array',
+                          items: {
+                            type: 'object',
+                            properties: {
+                              code: { type: 'string', example: '123' },
+                              name: { type: 'string', example: 'Магазин' },
+                              hasHistory: { type: 'boolean', example: true },
+                              items: {
+                                type: 'array',
+                                items: {
+                                  type: 'object',
+                                  properties: {
+                                    group: { type: 'string' },
+                                    subgroup: { type: 'string' },
+                                    tm: { type: 'string' },
+                                    packing: { type: 'string' },
+                                    product: {
+                                      type: 'string',
+                                      example: 'Товар',
+                                    },
+                                    periods: {
+                                      type: 'object',
+                                      additionalProperties: {
+                                        type: 'object',
+                                        properties: {
+                                          quantity: {
+                                            type: 'number',
+                                            example: 12,
+                                          },
+                                          amount: {
+                                            type: 'number',
+                                            example: 1200,
+                                          },
+                                          weight: {
+                                            type: 'number',
+                                            example: 6,
+                                          },
+                                        },
+                                      },
+                                      example: {
+                                        '2026-W40': {
+                                          quantity: 12,
+                                          amount: 1200,
+                                          weight: 6,
+                                        },
+                                      },
+                                    },
+                                  },
+                                },
+                              },
+                            },
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          401: { description: 'Unauthorized' },
+          403: { description: 'Tenant access denied' },
+          501: { description: 'Route history is not supported by this tenant' },
+          500: { description: 'Failed to retrieve route history' },
+        },
+      },
+    },
     '/api/sales/{salesId}': {
+      parameters: [{ $ref: '#/components/parameters/tenantId' }],
       get: {
         tags: ['OLGATORG Sales'],
         summary: 'Get OLGATORG sale by id',

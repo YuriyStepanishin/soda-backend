@@ -1,3 +1,4 @@
+import fs from 'node:fs/promises';
 import { importLaskaSales } from '../services/laskaImportSalesService.js';
 
 export const uploadLaskaSales = async (req, res) => {
@@ -20,5 +21,9 @@ export const uploadLaskaSales = async (req, res) => {
       success: false,
       message: error.message,
     });
+  } finally {
+    if (req.file?.path) {
+      await fs.unlink(req.file.path).catch(() => {});
+    }
   }
 };

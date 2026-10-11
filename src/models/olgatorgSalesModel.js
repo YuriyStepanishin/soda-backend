@@ -1,8 +1,8 @@
-import { pool } from '../db/connectOlgaTorgNeon.js';
+import { getPool } from '../db/index.js';
 import { buildRequestWhere } from '../utils/buildRequestWhere.js';
 
-// Явний список зберігає поточний контракт API, але не змушує PostgreSQL
-// повертати службові або випадково додані поля таблиці.
+const pool = getPool('olgatorg');
+
 const SALES_COLUMNS = `
   id,
   sale_date,
@@ -134,14 +134,18 @@ export const countSales = async (filter) => {
   return result.rows[0].total;
 };
 
-export const findSaleById = async (id) => {
+export const findSaleById = async (id, filter = { where: '', params: [] }) => {
+  const idParameter = filter.params.length + 1;
+  const where = filter.where
+    ? `${filter.where} AND id = $${idParameter}`
+    : `WHERE id = $${idParameter}`;
   const result = await pool.query(
     `
     SELECT ${SALES_COLUMNS}
     FROM sales
-    WHERE id = $1
+    ${where}
     `,
-    [id],
+    [...filter.params, id],
   );
 
   return result.rows[0];
@@ -683,6 +687,16 @@ const DRILLDOWN_CONFIG = {
     responseField: 'date',
     orderBy: 'group_value DESC',
   },
+  department: {
+    selectExpr: "COALESCE(NULLIF(TRIM(department), ''), 'Без відділу')",
+    responseField: 'department',
+    orderBy: 'amount DESC, group_value ASC',
+  },
+  agent: {
+    selectExpr: "COALESCE(NULLIF(TRIM(agent_name), ''), 'Без ТП')",
+    responseField: 'agent',
+    orderBy: 'amount DESC, group_value ASC',
+  },
 };
 
 export const getSalesDrilldown = async (groupBy, filter) => {
@@ -719,4 +733,94 @@ export const getSalesDrilldown = async (groupBy, filter) => {
     amount: row.amount,
     averagePrice: row.averagePrice,
   }));
+};
+
+const REPORT_FIELD_CONFIG = {
+  brand: {
+    selectExpr: "COALESCE(NULLIF(TRIM(tm), ''), 'Без ТМ')",
+  },
+  product: {
+    selectExpr: "COALESCE(NULLIF(TRIM(product_name), ''), 'Без товару')",
+  },
+  date: {
+    selectExpr: "TO_CHAR(sale_date::date, 'YYYY-MM-DD')",
+  },
+  store: {
+    selectExpr:
+      "COALESCE(NULLIF(TRIM(alt_name), ''), NULLIF(TRIM(outlet_name), ''), NULLIF(TRIM(client_name), ''), 'Без ТТ')",
+  },
+  department: {
+    selectExpr: "COALESCE(NULLIF(TRIM(department), ''), 'Без відділу')",
+  },
+  agent: {
+    selectExpr: "COALESCE(NULLIF(TRIM(agent_name), ''), 'Без ТП')",
+  },
+};
+
+export const getSalesReportRows = async (groupBy, filter) => {
+  const fields = groupBy.filter((field) => REPORT_FIELD_CONFIG[field]);
+  const effectiveFields = fields.length ? fields : ['brand'];
+  const expressions = effectiveFields.map(
+    (field) => REPORT_FIELD_CONFIG[field].selectExpr,
+  );
+  const dimensionSelect = expressions
+    .map((expression, index) => {
+      const groupingExpression = expressions[index];
+      return `CASE WHEN GROUPING(${groupingExpression}) = 0 THEN ${expression} ELSE NULL END AS dimension_${index}`;
+    })
+    .join(',\n      ');
+  const groupingSetsSql = expressions
+    .map((_, index) => `(${expressions.slice(0, index + 1).join(', ')})`)
+    .join(', ');
+  const orderBySql = expressions
+    .map((_, index) => `dimension_${index}`)
+    .join(' NULLS FIRST, ');
+  const groupingLevelSql = `(${expressions.length} - (${expressions
+    .map((expression) => `GROUPING(${expression})`)
+    .join(' + ')})) - 1`;
+
+  const result = await pool.query(
+    `
+    SELECT
+      ${dimensionSelect},
+      ${groupingLevelSql} AS level,
+      COUNT(DISTINCT COALESCE(NULLIF(TRIM(alt_name), ''), NULLIF(TRIM(outlet_name), ''), NULLIF(TRIM(client_name), '')))::int AS stores,
+      ROUND(COALESCE(SUM(qty), 0)::numeric, 2) AS quantity,
+      ROUND(COALESCE(SUM(qty * weight), 0)::numeric, 2) AS weight,
+      COUNT(*)::int AS sku,
+      ROUND(COALESCE(SUM(amount), 0)::numeric, 2) AS amount
+    FROM sales
+    ${filter.where}
+    GROUP BY GROUPING SETS (${groupingSetsSql})
+    ORDER BY ${orderBySql} NULLS FIRST
+    `,
+    filter.params,
+  );
+
+  return result.rows.map((row) => {
+    const dimensions = Object.fromEntries(
+      effectiveFields.map((field, index) => [field, row[`dimension_${index}`]]),
+    );
+
+    return {
+      dimensions,
+      label:
+        row[`dimension_${row.level}`] ||
+        effectiveFields
+          .map((field, index) => row[`dimension_${index}`])
+          .filter(Boolean)
+          .at(-1) ||
+        'Без назви',
+      path: effectiveFields
+        .map((field, index) => row[`dimension_${index}`])
+        .filter(Boolean)
+        .join(' / '),
+      level: Number(row.level),
+      stores: row.stores,
+      quantity: row.quantity,
+      weight: row.weight,
+      sku: row.sku,
+      amount: row.amount,
+    };
+  });
 };
