@@ -18,7 +18,7 @@ export const users = {
     role: ROLES.AGENT,
     tenant: 'laska',
     department: 'Областний відділ',
-    representative: 'Руслан Войцехівський',
+    representative: 'Войцехівський Руслан Володимирович',
   },
 
   'ks_sup@gmail.com': {
