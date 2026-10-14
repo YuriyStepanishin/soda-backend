@@ -17,17 +17,25 @@ const folderId = (envName) => {
 };
 
 const listExcelFiles = async (uploadsFolderEnv) => {
-  const response = await drive.files.list({
-    q: `'${folderId(uploadsFolderEnv)}' in parents and trashed=false`,
-    fields: 'files(id,name,mimeType,modifiedTime)',
-    orderBy: 'modifiedTime',
-    supportsAllDrives: true,
-    includeItemsFromAllDrives: true,
-  });
+  const files = [];
+  let pageToken;
 
-  return (response.data.files || []).filter((file) =>
-    /\.(xlsx|xls)$/i.test(file.name || ''),
-  );
+  do {
+    const response = await drive.files.list({
+      q: `'${folderId(uploadsFolderEnv)}' in parents and trashed=false`,
+      fields: 'nextPageToken,files(id,name,mimeType,modifiedTime)',
+      pageSize: 1000,
+      pageToken,
+      orderBy: 'modifiedTime',
+      supportsAllDrives: true,
+      includeItemsFromAllDrives: true,
+    });
+
+    files.push(...(response.data.files || []));
+    pageToken = response.data.nextPageToken;
+  } while (pageToken);
+
+  return files.filter((file) => /\.(xlsx|xls)$/i.test(file.name || ''));
 };
 
 const downloadFile = async (fileId, fileName, prefix) => {
