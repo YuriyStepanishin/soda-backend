@@ -27,7 +27,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(logger); // Логування запитів
-app.use(express.json()); // Дозволяє обробляти JSON в тілі запиту
+app.use(express.json({ limit: '1mb' })); // Дозволяє обробляти JSON в тілі запиту
 app.use(cors()); // Дозволяє запити з будь-яких джерел
 app.use(cookieParser()); // Дозволяє обробляти cookies
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));

@@ -18,7 +18,13 @@ export const users = {
     role: ROLES.AGENT,
     tenant: 'laska',
     department: 'Областний відділ',
-    representative: 'Руслан Войцехівський',
+    representative: 'Войцехівський Руслан Володимирович',
+  },
+  'karvan.sm006@gmail.com': {
+    role: ROLES.AGENT,
+    tenant: 'laska',
+    department: 'Областний відділ',
+    representative: 'Гороцька Тетяна Петрівна',
   },
 
   'ks_sup@gmail.com': {
