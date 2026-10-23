@@ -261,8 +261,13 @@ const ensureSalesHistoryRouteTmOnce = async () => {
   return ensureSalesHistoryRouteTmPromise;
 };
 
-export const refreshSalesHistoryDaily = async ({ dateFrom, dateTo }) => {
-  if (!dateFrom || !dateTo) {
+export const refreshSalesHistoryDaily = async ({
+  dateFrom,
+  dateTo,
+  dates,
+  client: existingClient,
+}) => {
+  if (!dates?.length && (!dateFrom || !dateTo)) {
     return { refreshed: false, rows: 0 };
   }
 
@@ -270,35 +275,59 @@ export const refreshSalesHistoryDaily = async ({ dateFrom, dateTo }) => {
   await ensureSalesHistoryPeriodOnce();
   await ensureSalesHistoryRouteTmOnce();
 
-  const client = await laskaPool.connect();
+  const client = existingClient || (await laskaPool.connect());
+  const ownsClient = !existingClient;
 
   try {
-    await client.query('BEGIN');
+    if (ownsClient) await client.query('BEGIN');
+
+    const params = dates?.length ? [dates] : [dateFrom, dateTo];
+    const dailyDateFilter = dates?.length
+      ? `sale_date IN (
+          SELECT (changed.sale_date - INTERVAL '1 day')::date
+          FROM unnest($1::date[]) AS changed(sale_date)
+        )`
+      : 'sale_date BETWEEN $1::date AND $2::date';
+    const periodStartFilter = dates?.length
+      ? `start_date IN (
+          SELECT DISTINCT date_trunc('week', changed.sale_date - INTERVAL '1 day')::date
+          FROM unnest($1::date[]) AS changed(sale_date)
+          UNION
+          SELECT DISTINCT date_trunc('month', changed.sale_date - INTERVAL '1 day')::date
+          FROM unnest($1::date[]) AS changed(sale_date)
+        )`
+      : `start_date BETWEEN date_trunc('week', $1::date)::date
+                         AND date_trunc('month', $2::date)::date`;
+    const sourceDateFilter = dates?.length
+      ? `(s.sale_date::date - INTERVAL '1 day')::date IN (
+          SELECT (changed.sale_date - INTERVAL '1 day')::date
+          FROM unnest($1::date[]) AS changed(sale_date)
+        )`
+      : `(s.sale_date::date - INTERVAL '1 day')::date
+          BETWEEN $1::date AND $2::date`;
 
     await client.query(
       `
       DELETE FROM public.sales_history_daily
-      WHERE sale_date BETWEEN $1::date AND $2::date
+      WHERE ${dailyDateFilter}
       `,
-      [dateFrom, dateTo],
+      params,
     );
 
     await client.query(
       `
       DELETE FROM public.sales_history_period
-      WHERE start_date BETWEEN date_trunc('week', $1::date)::date
-                           AND date_trunc('month', $2::date)::date
+      WHERE ${periodStartFilter}
       `,
-      [dateFrom, dateTo],
+      params,
     );
 
     await client.query(
       `
       DELETE FROM public.sales_history_route_tm_period
-      WHERE start_date BETWEEN date_trunc('week', $1::date)::date
-                           AND date_trunc('month', $2::date)::date
+      WHERE ${periodStartFilter}
       `,
-      [dateFrom, dateTo],
+      params,
     );
 
     const result = await client.query(
@@ -339,25 +368,24 @@ export const refreshSalesHistoryDaily = async ({ dateFrom, dateTo }) => {
       FROM public.sales s
       LEFT JOIN public.products p
         ON TRIM(p.product_name) = TRIM(s.product_name)
-      WHERE (s.sale_date::date - INTERVAL '1 day')::date
-        BETWEEN $1::date AND $2::date
+      WHERE ${sourceDateFilter}
       GROUP BY
         (s.sale_date::date - INTERVAL '1 day')::date,
         COALESCE(NULLIF(TRIM(s.ta), ''), ''),
         COALESCE(NULLIF(TRIM(s.store_code), ''), ''),
         COALESCE(NULLIF(TRIM(s.product_code), ''), '')
       `,
-      [dateFrom, dateTo],
+      params,
     );
 
-    await client.query('COMMIT');
+    if (ownsClient) await client.query('COMMIT');
 
     return { refreshed: true, rows: result.rowCount };
   } catch (error) {
-    await client.query('ROLLBACK');
+    if (ownsClient) await client.query('ROLLBACK');
     throw error;
   } finally {
-    client.release();
+    if (ownsClient) client.release();
   }
 };
 

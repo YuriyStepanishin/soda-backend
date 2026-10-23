@@ -1,8 +1,14 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { pipeline } from 'node:stream/promises';
 import { drive } from '../config/googleDrive.js';
-import { createSyncRecord, getSyncByFileId } from '../models/olgatorgSyncModel.js';
+import {
+  createSyncRecord,
+  createSyncRecords,
+  getExpiredSyncRecords,
+  getSyncRecords,
+} from '../models/olgatorgSyncModel.js';
 
 const uploadsDir = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -16,18 +22,28 @@ const folderId = (envName) => {
   return value;
 };
 
-const listExcelFiles = async (uploadsFolderEnv) => {
-  const response = await drive.files.list({
-    q: `'${folderId(uploadsFolderEnv)}' in parents and trashed=false`,
-    fields: 'files(id,name,mimeType,modifiedTime)',
-    orderBy: 'modifiedTime',
-    supportsAllDrives: true,
-    includeItemsFromAllDrives: true,
-  });
+const listExcelFiles = async (uploadsFolderEnv, archiveFolderEnv) => {
+  const uploadsFolder = folderId(uploadsFolderEnv);
+  const archiveFolder = folderId(archiveFolderEnv);
+  const files = [];
+  let pageToken;
 
-  return (response.data.files || []).filter((file) =>
-    /\.(xlsx|xls)$/i.test(file.name || ''),
-  );
+  do {
+    const response = await drive.files.list({
+      q: `('${uploadsFolder}' in parents or '${archiveFolder}' in parents) and trashed=false`,
+      fields: 'nextPageToken,files(id,name,mimeType,modifiedTime,parents)',
+      orderBy: 'modifiedTime',
+      pageSize: 1000,
+      pageToken,
+      supportsAllDrives: true,
+      includeItemsFromAllDrives: true,
+    });
+
+    files.push(...(response.data.files || []));
+    pageToken = response.data.nextPageToken;
+  } while (pageToken);
+
+  return files.filter((file) => /\.(xlsx|xls)$/i.test(file.name || ''));
 };
 
 const downloadFile = async (fileId, fileName, prefix) => {
@@ -39,30 +55,28 @@ const downloadFile = async (fileId, fileName, prefix) => {
     { responseType: 'stream' },
   );
 
-  await new Promise((resolve, reject) => {
-    const destination = fs.createWriteStream(filePath);
-    response.data.pipe(destination).on('finish', resolve).on('error', reject);
-  });
+  await pipeline(response.data, fs.createWriteStream(filePath));
 
   return filePath;
 };
 
-const moveToArchive = async (fileId, uploadsFolderEnv, archiveFolderEnv) => {
+const moveToArchive = async (
+  fileId,
+  parents,
+  uploadsFolderEnv,
+  archiveFolderEnv,
+) => {
+  if (!parents?.includes(folderId(uploadsFolderEnv))) return false;
+
   await drive.files.update({
     fileId,
     addParents: folderId(archiveFolderEnv),
     removeParents: folderId(uploadsFolderEnv),
     supportsAllDrives: true,
   });
-};
 
-const countsFrom = (result) =>
-  typeof result === 'number'
-    ? { inserted: result, updated: 0 }
-    : {
-        inserted: Number(result?.inserted) || 0,
-        updated: Number(result?.updated) || 0,
-      };
+  return true;
+};
 
 export const processDriveImports = async ({
   key,
@@ -72,6 +86,7 @@ export const processDriveImports = async ({
   uploadsFolderEnv,
   archiveFolderEnv,
   importService,
+  importAllFilesWhenChanged = false,
 }) => {
   if (runningImports.has(key)) {
     throw new Error(`${key} import is already running`);
@@ -80,45 +95,137 @@ export const processDriveImports = async ({
   runningImports.add(key);
 
   try {
-    const files = await listExcelFiles(uploadsFolderEnv);
-    const summary = { found: files.length, processed: 0, archived: 0, inserted: 0, updated: 0, failed: [] };
-
+    const files = await listExcelFiles(uploadsFolderEnv, archiveFolderEnv);
+    const summary = {
+      found: files.length,
+      processed: 0,
+      archived: 0,
+      inserted: 0,
+      deleted: 0,
+      trashedFromArchive: 0,
+    };
+    const syncRecords = new Map(
+      (await getSyncRecords(fileType, tenant)).map((record) => [
+        record.file_id,
+        record,
+      ]),
+    );
+    const changedFiles = [];
     for (const file of files) {
-      let filePath;
+      const syncRecord = syncRecords.get(file.id);
+      const storedModifiedTime = syncRecord?.modified_time
+        ? new Date(syncRecord.modified_time).getTime()
+        : null;
+      const currentModifiedTime = file.modifiedTime
+        ? new Date(file.modifiedTime).getTime()
+        : null;
 
-      try {
-        if (await getSyncByFileId(fileType, file.id, tenant)) {
-          await moveToArchive(file.id, uploadsFolderEnv, archiveFolderEnv);
-          summary.archived += 1;
-          continue;
-        }
-
-        filePath = await downloadFile(file.id, file.name, prefix);
-        const counts = countsFrom(await importService(filePath));
-
+      if (
+        syncRecord &&
+        storedModifiedTime === null &&
+        currentModifiedTime !== null
+      ) {
         await createSyncRecord({
           tenant,
           fileType,
-          fileName: file.name,
+          fileName: syncRecord.file_name,
           fileId: file.id,
-          importedRows: counts.inserted + counts.updated,
+          importedRows: syncRecord.imported_rows,
+          modifiedTime: file.modifiedTime,
         });
-        await moveToArchive(file.id, uploadsFolderEnv, archiveFolderEnv);
+        continue;
+      }
 
-        summary.processed += 1;
-        summary.archived += 1;
-        summary.inserted += counts.inserted;
-        summary.updated += counts.updated;
-      } catch (error) {
-        summary.failed.push({ fileId: file.id, fileName: file.name, error: error.message });
-      } finally {
-        if (filePath) await fs.promises.unlink(filePath).catch(() => {});
+      if (
+        syncRecord &&
+        (currentModifiedTime === null ||
+          storedModifiedTime === currentModifiedTime)
+      ) {
+        continue;
+      }
+
+      changedFiles.push(file);
+    }
+
+    const filesToImport =
+      importAllFilesWhenChanged && changedFiles.length ? files : changedFiles;
+    const downloadedFiles = [];
+    try {
+      for (const file of filesToImport) {
+        const filePath = await downloadFile(file.id, file.name, prefix);
+        downloadedFiles.push({ ...file, filePath });
+      }
+
+      if (downloadedFiles.length) {
+        const result = await importService(downloadedFiles);
+        const rowsByFile = result?.rowsByFile || {};
+        summary.processed = downloadedFiles.length;
+        summary.inserted = Number(result?.inserted) || 0;
+        summary.deleted = Number(result?.deleted) || 0;
+
+        await createSyncRecords({
+          tenant,
+          fileType,
+          files: downloadedFiles.map((file) => ({
+            fileName: file.name,
+            fileId: file.id,
+            importedRows:
+              Number(rowsByFile[file.id] ?? rowsByFile[file.name]) || 0,
+            modifiedTime: file.modifiedTime,
+          })),
+        });
+      }
+    } finally {
+      for (const file of downloadedFiles) {
+        await fs.promises.unlink(file.filePath).catch(() => {});
       }
     }
 
-    if (summary.failed.length) {
-      const details = summary.failed.map((item) => `${item.fileName}: ${item.error}`).join('; ');
-      throw new Error(`${key} import finished with errors: ${details}`);
+    for (const file of files) {
+      if (!file.parents?.includes(folderId(uploadsFolderEnv))) continue;
+      if (
+        await moveToArchive(
+          file.id,
+          file.parents,
+          uploadsFolderEnv,
+          archiveFolderEnv,
+        )
+      ) {
+        summary.archived += 1;
+      }
+    }
+
+    const archiveFolder = folderId(archiveFolderEnv);
+    const uploadsFolder = folderId(uploadsFolderEnv);
+    const filesById = new Map(files.map((file) => [file.id, file]));
+    const expiredRecords = await getExpiredSyncRecords({
+      fileType,
+      tenant,
+    });
+
+    for (const record of expiredRecords) {
+      const file = filesById.get(record.file_id);
+      const storedModifiedTime = new Date(record.modified_time).getTime();
+      const currentModifiedTime = file?.modifiedTime
+        ? new Date(file.modifiedTime).getTime()
+        : null;
+
+      if (
+        !file ||
+        !file.parents?.includes(archiveFolder) ||
+        file.parents.includes(uploadsFolder) ||
+        currentModifiedTime === null ||
+        storedModifiedTime !== currentModifiedTime
+      ) {
+        continue;
+      }
+
+      await drive.files.update({
+        fileId: file.id,
+        requestBody: { trashed: true },
+        supportsAllDrives: true,
+      });
+      summary.trashedFromArchive += 1;
     }
 
     return summary;

@@ -216,10 +216,14 @@ const ensureRouteTmOnce = async () => {
   return ensureRouteTmPromise;
 };
 
+export const ensureOlgatorgRouteTmHistory = ensureRouteTmOnce;
+
 export const refreshOlgatorgRouteTmHistory = async ({
   periodType,
   dateFrom,
   dateTo,
+  dates,
+  client: existingClient,
 }) => {
   await ensureRouteTmOnce();
 
@@ -240,19 +244,53 @@ export const refreshOlgatorgRouteTmHistory = async ({
       ? `EXTRACT(WEEK FROM ${businessSaleDate})::int`
       : `EXTRACT(MONTH FROM ${businessSaleDate})::int`;
 
-  const client = await pool.connect();
+  const client = existingClient || (await pool.connect());
+  const ownsClient = !existingClient;
+  let transactionStarted = false;
 
   try {
-    await client.query('BEGIN');
+    if (ownsClient) {
+      await client.query('BEGIN');
+      transactionStarted = true;
+    }
+
+    const affectedPeriodStarts = dates
+      ? `
+        SELECT DISTINCT
+          date_trunc($1, (affected.sale_date - INTERVAL '1 day'))::date
+        FROM unnest($2::date[]) AS affected(sale_date)
+      `
+      : null;
+    const queryParams = dates
+      ? [periodType, dates]
+      : [periodType, dateFrom, dateTo];
+    const periodPredicate = dates
+      ? `start_date IN (${affectedPeriodStarts})`
+      : `start_date BETWEEN date_trunc($1, $2::date)::date
+                      AND date_trunc($1, $3::date)::date`;
+    const salesDatePredicate = dates
+      ? `${businessSaleDate} IN (${affectedPeriodStarts})`
+      : `${businessSaleDate} >= date_trunc($1, $2::date)::date
+          AND ${businessSaleDate} < (
+            date_trunc($1, $3::date)
+            + CASE
+                WHEN $1 = 'week' THEN INTERVAL '1 week'
+                ELSE INTERVAL '1 month'
+              END
+          )::date`;
+
+    if (dates?.length === 0) {
+      if (transactionStarted) await client.query('COMMIT');
+      return { refreshed: false, rows: 0 };
+    }
 
     await client.query(
       `
       DELETE FROM public.sales_history_route_tm_period
       WHERE period_type = $1
-        AND start_date BETWEEN date_trunc($1, $2::date)::date
-                           AND date_trunc($1, $3::date)::date
+        AND ${periodPredicate}
       `,
-      [periodType, dateFrom, dateTo],
+      queryParams,
     );
 
     const result = await client.query(
@@ -289,14 +327,7 @@ export const refreshOlgatorgRouteTmHistory = async ({
         SUM(COALESCE(qty, 0) * COALESCE(weight, 0)) AS weight,
         now()
       FROM public.sales
-      WHERE ${businessSaleDate} >= date_trunc($1, $2::date)::date
-        AND ${businessSaleDate} < (
-          date_trunc($1, $3::date)
-          + CASE
-              WHEN $1 = 'week' THEN INTERVAL '1 week'
-              ELSE INTERVAL '1 month'
-            END
-        )::date
+      WHERE ${salesDatePredicate}
       GROUP BY
         ${periodStart},
         ${yearExpr},
@@ -307,17 +338,24 @@ export const refreshOlgatorgRouteTmHistory = async ({
         COALESCE(NULLIF(TRIM(barcode::text), ''), ''),
         COALESCE(NULLIF(TRIM(product_name), ''), 'Без товару')
       `,
-      [periodType, dateFrom, dateTo],
+      queryParams,
     );
 
-    await client.query('COMMIT');
+    if (transactionStarted) {
+      await client.query('COMMIT');
+      transactionStarted = false;
+    }
 
     return { refreshed: true, rows: result.rowCount };
   } catch (error) {
-    await client.query('ROLLBACK');
+    if (transactionStarted) {
+      await client.query('ROLLBACK');
+    }
     throw error;
   } finally {
-    client.release();
+    if (ownsClient) {
+      client.release();
+    }
   }
 };
 

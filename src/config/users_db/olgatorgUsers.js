@@ -127,8 +127,20 @@ export const users = {
   },
 };
 
+export const agentDepartments = Object.fromEntries(
+  Object.values(users)
+    .filter(
+      (user) =>
+        user.tenant === 'olgatorg' &&
+        user.role === ROLES.AGENT &&
+        user.representative &&
+        user.department,
+    )
+    .map(({ representative, department }) => [representative, department]),
+);
+
 export const getUserProfile = (email) => {
-  if (!email) return null;
+  if (typeof email !== 'string' || !email.trim()) return null;
 
   const profile = users[email.trim().toLowerCase()];
 
@@ -172,12 +184,15 @@ export const buildSalesWhere = (user) => {
   }
 };
 
-function getAgentsByDepartments(departments) {
+export function getAgentsByDepartments(departments = []) {
+  if (!Array.isArray(departments) || departments.length === 0) return [];
+
   return Object.values(users)
     .filter(
       (user) =>
-        user.role === ROLES.AGENT && departments.includes(user.department),
+        user.tenant === 'olgatorg' &&
+        user.role === ROLES.AGENT &&
+        departments.includes(user.department),
     )
     .map((user) => user.representative);
 }
-export { getAgentsByDepartments };

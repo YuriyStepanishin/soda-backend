@@ -1,14 +1,19 @@
 import fs from 'node:fs/promises';
-import { importSalesService } from '../services/olgatorgImportSalesService.js';
+import { importOlgatorgSales } from '../services/olgatorgSalesImportService.js';
 
 export const uploadSales = async (req, res) => {
-  try {
-    const inserted = await importSalesService(req.file.path);
-
-    return res.json({
-      success: true,
-      inserted,
+  if (!req.file) {
+    return res.status(400).json({
+      success: false,
+      message: 'Excel file is required',
     });
+  }
+
+  try {
+    const result = await importOlgatorgSales([
+      { filePath: req.file.path, name: req.file.originalname },
+    ]);
+    return res.status(200).json({ success: true, data: result });
   } catch (error) {
     return res.status(500).json({
       success: false,
@@ -16,7 +21,11 @@ export const uploadSales = async (req, res) => {
     });
   } finally {
     if (req.file?.path) {
-      await fs.unlink(req.file.path).catch(() => {});
+      try {
+        await fs.unlink(req.file.path);
+      } catch (error) {
+        console.error('Failed to remove rejected OLGATORG upload:', error.message);
+      }
     }
   }
 };

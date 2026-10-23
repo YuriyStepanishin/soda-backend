@@ -24,7 +24,7 @@ export const users = {
     role: ROLES.AGENT,
     tenant: 'laska',
     department: 'Областний відділ',
-    representative: 'Гороцька Тетяна Петрівна',
+    representative: 'Горeцька Тетяна Петрівна',
   },
 
   'ks_sup@gmail.com': {

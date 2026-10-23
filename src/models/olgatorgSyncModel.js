@@ -2,7 +2,7 @@ import { getPool } from '../db/index.js';
 
 const getSyncPool = (tenant = 'olgatorg') => getPool(tenant);
 
-const ensureSyncHistory = async (pool) => {
+export const ensureSyncHistory = async (pool) => {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS sync_history (
       id SERIAL PRIMARY KEY,
@@ -10,8 +10,14 @@ const ensureSyncHistory = async (pool) => {
       file_name TEXT NOT NULL,
       file_id TEXT NOT NULL,
       imported_rows INTEGER NOT NULL DEFAULT 0,
+      modified_time TIMESTAMPTZ,
       imported_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
+  `);
+
+  await pool.query(`
+    ALTER TABLE sync_history
+      ADD COLUMN IF NOT EXISTS modified_time TIMESTAMPTZ
   `);
 
   await pool.query(`
@@ -31,6 +37,7 @@ export const createSyncRecord = async ({
   fileName,
   fileId,
   importedRows,
+  modifiedTime,
 }) => {
   const pool = getSyncPool(tenant);
   await ensureSyncHistory(pool);
@@ -41,15 +48,59 @@ export const createSyncRecord = async ({
       file_type,
       file_name,
       file_id,
-      imported_rows
+      imported_rows,
+      modified_time
     )
-    VALUES ($1, $2, $3, $4)
+    VALUES ($1, $2, $3, $4, $5)
+    ON CONFLICT (file_type, file_id) DO UPDATE SET
+      file_name = EXCLUDED.file_name,
+      imported_rows = EXCLUDED.imported_rows,
+      modified_time = EXCLUDED.modified_time,
+      imported_at = NOW()
     RETURNING *
     `,
-    [fileType, fileName, fileId, importedRows],
+    [fileType, fileName, fileId, importedRows, modifiedTime || null],
   );
 
   return result.rows[0];
+};
+
+export const createSyncRecords = async ({
+  tenant = 'olgatorg',
+  fileType,
+  files,
+}) => {
+  if (!files.length) return;
+  const pool = getSyncPool(tenant);
+  await ensureSyncHistory(pool);
+
+  const values = [];
+  const rows = files.map((file, index) => {
+    const offset = index * 5;
+    values.push(
+      fileType,
+      file.fileName,
+      file.fileId,
+      file.importedRows,
+      file.modifiedTime || null,
+    );
+    return `($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5})`;
+  });
+
+  await pool.query(
+    `
+    INSERT INTO sync_history (
+      file_type, file_name, file_id, imported_rows, modified_time
+    )
+    VALUES ${rows.join(', ')}
+    ON CONFLICT (file_type, file_id) DO UPDATE SET
+      file_name = EXCLUDED.file_name,
+      imported_rows = EXCLUDED.imported_rows,
+      modified_time = EXCLUDED.modified_time,
+      imported_at = NOW()
+    `,
+    values,
+  );
 };
 
 export const getLastSync = async (fileType, tenant = 'olgatorg') => {
@@ -68,6 +119,17 @@ export const getLastSync = async (fileType, tenant = 'olgatorg') => {
   );
 
   return result.rows[0];
+};
+
+export const getSyncRecords = async (fileType, tenant = 'olgatorg') => {
+  const pool = getSyncPool(tenant);
+  await ensureSyncHistory(pool);
+
+  const result = await pool.query(
+    'SELECT * FROM sync_history WHERE file_type = $1',
+    [fileType],
+  );
+  return result.rows;
 };
 
 export const getSyncByFileId = async (
@@ -89,4 +151,26 @@ export const getSyncByFileId = async (
   );
 
   return result.rows[0];
+};
+
+export const getExpiredSyncRecords = async ({
+  fileType,
+  tenant = 'olgatorg',
+  retentionDays = 10,
+}) => {
+  const pool = getSyncPool(tenant);
+  await ensureSyncHistory(pool);
+
+  const result = await pool.query(
+    `
+    SELECT file_id, modified_time
+    FROM sync_history
+    WHERE file_type = $1
+      AND imported_at < NOW() - ($2 * INTERVAL '1 day')
+      AND modified_time IS NOT NULL
+    `,
+    [fileType, retentionDays],
+  );
+
+  return result.rows;
 };

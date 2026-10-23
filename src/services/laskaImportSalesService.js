@@ -2,20 +2,31 @@ import XLSX from 'xlsx';
 import { getPool } from '../db/index.js';
 import { refreshSalesHistoryDaily } from '../models/laskaSalesHistoryDailyModel.js';
 
-const laskaPool = getPool('laska');
-
 const BATCH_SIZE = 1000;
+const SALES_COLUMNS = [
+  'sale_date',
+  'ta',
+  'store_code',
+  'store_name',
+  'product_code',
+  'product_name',
+  'quantity',
+  'amount',
+  'price',
+  'invoice_number',
+  'address',
+  'purchase_price',
+  'weight',
+];
 
 const textOrNull = (value) => {
   if (value === null || value === undefined) return null;
-
-  const valueAsText = String(value).trim();
-  return valueAsText || null;
+  const text = String(value).trim();
+  return text || null;
 };
 
 const numberOrNull = (value) => {
   if (value === null || value === undefined || value === '') return null;
-
   const number = Number(String(value).replace(',', '.').replace(/\s/g, ''));
   return Number.isFinite(number) ? number : null;
 };
@@ -28,192 +39,205 @@ const dateToSqlDate = (value) => {
   if (typeof value === 'number') {
     const date = XLSX.SSF.parse_date_code(value);
     if (!date) return null;
-
     return `${date.y}-${String(date.m).padStart(2, '0')}-${String(date.d).padStart(2, '0')}`;
   }
 
-  const valueAsText = textOrNull(value);
-  if (!valueAsText) return null;
+  const text = textOrNull(value);
+  if (!text) return null;
 
-  const dateMatch = valueAsText.match(/(\d{1,2})\.(\d{1,2})\.(\d{4})/);
-  if (dateMatch) {
-    const [, day, month, year] = dateMatch;
+  const match = text.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+  if (match) {
+    const [, day, month, year] = match;
+    const date = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)));
+    if (
+      date.getUTCFullYear() !== Number(year) ||
+      date.getUTCMonth() + 1 !== Number(month) ||
+      date.getUTCDate() !== Number(day)
+    ) {
+      return null;
+    }
     return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
   }
 
-  const parsed = new Date(valueAsText);
-  return Number.isNaN(parsed.getTime())
-    ? null
-    : parsed.toISOString().slice(0, 10);
+  const isoMatch = text.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (isoMatch) {
+    const [, year, month, day] = isoMatch;
+    const date = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)));
+    if (
+      date.getUTCFullYear() !== Number(year) ||
+      date.getUTCMonth() + 1 !== Number(month) ||
+      date.getUTCDate() !== Number(day)
+    ) {
+      return null;
+    }
+    return text;
+  }
+  return null;
 };
 
-const rowToSale = (row) => ({
-  saleDate: dateToSqlDate(row[0]),
-  ta: textOrNull(row[3]),
-  storeCode: textOrNull(row[4]),
-  storeName: textOrNull(row[5]),
-  productCode: textOrNull(row[7]),
-  productName: textOrNull(row[8]),
-  quantity: numberOrNull(row[9]),
-  amount: numberOrNull(row[10]),
-  price: numberOrNull(row[11]),
-  invoiceNumber: textOrNull(row[12]),
-  address: textOrNull(row[13]),
-  purchasePrice: numberOrNull(row[14]),
-  weight: numberOrNull(row[15]),
-});
+const rowToSale = (row, fileName, rowNumber) => {
+  const sale = {
+    sale_date: dateToSqlDate(row[0]),
+    ta: textOrNull(row[3]),
+    store_code: textOrNull(row[4]),
+    store_name: textOrNull(row[5]),
+    product_code: textOrNull(row[7]),
+    product_name: textOrNull(row[8]),
+    quantity: numberOrNull(row[9]),
+    amount: numberOrNull(row[10]),
+    price: numberOrNull(row[11]),
+    invoice_number: textOrNull(row[12]),
+    address: textOrNull(row[13]),
+    purchase_price: numberOrNull(row[14]),
+    weight: numberOrNull(row[15]),
+  };
 
-const isValidSale = (sale) =>
-  sale.saleDate &&
-  sale.ta &&
-  sale.storeCode &&
-  sale.productCode &&
-  sale.invoiceNumber;
+  const missing = [
+    ['дата', sale.sale_date],
+    ['ТТ', sale.ta],
+    ['код магазину', sale.store_code],
+    ['код товару', sale.product_code],
+    ['номер накладної', sale.invoice_number],
+    ['кількість', sale.quantity],
+    ['сума', sale.amount],
+  ].find(([, value]) => value === null || value === undefined);
+  if (missing) {
+    throw new Error(`${fileName}, рядок ${rowNumber}: некоректне поле "${missing[0]}"`);
+  }
 
-const insertBatch = async (batch) => {
-  const columns = [
-    'sale_date',
-    'ta',
-    'store_code',
-    'store_name',
-    'product_code',
-    'product_name',
-    'quantity',
-    'amount',
-    'price',
-    'invoice_number',
-    'address',
-    'purchase_price',
-    'weight',
-  ];
-  const values = [];
-  const placeholders = batch.map((sale, rowIndex) => {
-    const rowValues = [
-      sale.saleDate,
-      sale.ta,
-      sale.storeCode,
-      sale.storeName,
-      sale.productCode,
-      sale.productName,
-      sale.quantity,
-      sale.amount,
-      sale.price,
-      sale.invoiceNumber,
-      sale.address,
-      sale.purchasePrice,
-      sale.weight,
-    ];
+  return sale;
+};
 
-    values.push(...rowValues);
-    const start = rowIndex * columns.length;
-    return `(${rowValues.map((_, index) => `$${start + index + 1}`).join(', ')})`;
+const insertStageBatch = async (client, rows) => {
+  if (!rows.length) return;
+  const values = rows.flatMap((sale) => SALES_COLUMNS.map((column) => sale[column]));
+  const placeholders = rows.map((_, rowIndex) => {
+    const offset = rowIndex * SALES_COLUMNS.length;
+    return `(${SALES_COLUMNS.map((__, columnIndex) => `$${offset + columnIndex + 1}`).join(', ')})`;
   });
 
-  const query = `
-    WITH incoming (${columns.join(', ')}) AS (
-      VALUES ${placeholders.join(', ')}
-    ), updated AS (
-      UPDATE sales AS existing
-      SET
-        ta = incoming.ta,
-        store_name = incoming.store_name,
-        product_name = incoming.product_name,
-        quantity = incoming.quantity::numeric,
-        amount = incoming.amount::numeric,
-        price = incoming.price::numeric,
-        address = incoming.address,
-        purchase_price = incoming.purchase_price::numeric,
-        weight = incoming.weight::numeric
-      FROM incoming
-      WHERE existing.sale_date = incoming.sale_date::date
-        AND existing.store_code = incoming.store_code
-        AND existing.product_code = incoming.product_code
-        AND existing.invoice_number = incoming.invoice_number
-      RETURNING 1
-    ), inserted AS (
-      INSERT INTO sales (${columns.join(', ')})
-      SELECT
-        incoming.sale_date::date,
-        incoming.ta,
-        incoming.store_code,
-        incoming.store_name,
-        incoming.product_code,
-        incoming.product_name,
-        incoming.quantity::numeric,
-        incoming.amount::numeric,
-        incoming.price::numeric,
-        incoming.invoice_number,
-        incoming.address,
-        incoming.purchase_price::numeric,
-        incoming.weight::numeric
-      FROM incoming
-      WHERE NOT EXISTS (
-        SELECT 1
-        FROM sales existing
-        WHERE existing.sale_date = incoming.sale_date::date
-          AND existing.store_code = incoming.store_code
-          AND existing.product_code = incoming.product_code
-          AND existing.invoice_number = incoming.invoice_number
-      )
-      RETURNING 1
-    )
-    SELECT
-      (SELECT COUNT(*)::int FROM updated) AS updated,
-      (SELECT COUNT(*)::int FROM inserted) AS inserted
-  `;
-
-  const result = await laskaPool.query(query, values);
-  return result.rows[0];
+  await client.query(
+    `INSERT INTO pg_temp.laska_sales_import_stage (${SALES_COLUMNS.join(', ')}) VALUES ${placeholders.join(', ')}`,
+    values,
+  );
 };
 
-export const importLaskaSales = async (filePath) => {
+const readFile = async (filePath, fileName, fileKey, client, rowsByFile, dates) => {
   const workbook = XLSX.readFile(filePath, { cellDates: true });
-  const sheet = workbook.Sheets[workbook.SheetNames[0]];
-  const rows = XLSX.utils.sheet_to_json(sheet, {
+  const sheetName = workbook.SheetNames[0];
+  if (!sheetName) throw new Error(`${fileName}: файл не містить аркуша`);
+
+  const rows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], {
     header: 1,
     defval: null,
     range: 5,
   });
-  const sourceRows = rows.map(rowToSale).filter(isValidSale);
-  const dataRows = Array.from(
-    new Map(
-      sourceRows.map((sale) => [
-        JSON.stringify([
-          sale.saleDate,
-          sale.productCode,
-          sale.storeCode,
-          sale.invoiceNumber,
-        ]),
-        sale,
-      ]),
-    ).values(),
-  );
+  let count = 0;
+  let batch = [];
 
-  let inserted = 0;
-  let updated = 0;
-  for (let index = 0; index < dataRows.length; index += BATCH_SIZE) {
-    const result = await insertBatch(dataRows.slice(index, index + BATCH_SIZE));
-    inserted += result.inserted;
-    updated += result.updated;
+  for (let index = 0; index < rows.length; index += 1) {
+    const row = rows[index];
+    if (row.every((value) => value == null || String(value).trim() === '')) {
+      continue;
+    }
+
+    const sale = rowToSale(row, fileName, index + 6);
+    batch.push(sale);
+    dates.add(sale.sale_date);
+    count += 1;
+    if (batch.length === BATCH_SIZE) {
+      await insertStageBatch(client, batch);
+      batch = [];
+    }
   }
 
-  const importedDates = dataRows
-    .map((sale) => sale.saleDate)
-    .filter(Boolean)
-    .sort();
-  const historyRefresh = importedDates.length
-    ? await refreshSalesHistoryDaily({
-        dateFrom: importedDates[0],
-        dateTo: importedDates[importedDates.length - 1],
-      })
-    : { refreshed: false, rows: 0 };
+  await insertStageBatch(client, batch);
+  rowsByFile[fileKey] = count;
+  return count;
+};
 
-  return {
-    sourceRows: sourceRows.length,
-    inserted,
-    updated,
-    skipped: dataRows.length - inserted - updated,
-    salesHistoryDaily: historyRefresh,
-    startRow: 6,
-  };
+export const importLaskaSales = async (input) => {
+  const files = (Array.isArray(input) ? input : [{ filePath: input }]).map(
+    (file) => ({
+      filePath: file.filePath,
+      fileName: file.name || file.fileName || file.filePath.split(/[\\/]/).pop(),
+      id: file.id,
+    }),
+  );
+  if (files.length === 0) {
+    return { inserted: 0, deleted: 0, dates: [], rowsByFile: {} };
+  }
+
+  const client = await getPool('laska').connect();
+  const dates = new Set();
+  const rowsByFile = {};
+
+  try {
+    await client.query('BEGIN');
+    await client.query('SELECT pg_advisory_xact_lock(73501421, 2)');
+    await client.query(`
+      CREATE TEMP TABLE laska_sales_import_stage (
+        sale_date date NOT NULL,
+        ta text,
+        store_code text,
+        store_name text,
+        product_code text,
+        product_name text,
+        quantity numeric,
+        amount numeric,
+        price numeric,
+        invoice_number text,
+        address text,
+        purchase_price numeric,
+        weight numeric
+      ) ON COMMIT DROP
+    `);
+
+    for (const file of files) {
+      await readFile(
+        file.filePath,
+        file.fileName,
+        file.id || file.fileName,
+        client,
+        rowsByFile,
+        dates,
+      );
+    }
+
+    if (!dates.size) {
+      await client.query('COMMIT');
+      return { inserted: 0, deleted: 0, dates: [], rowsByFile };
+    }
+
+    const deleted = await client.query(`
+      DELETE FROM sales
+      WHERE sale_date IN (
+        SELECT DISTINCT sale_date FROM pg_temp.laska_sales_import_stage
+      )
+    `);
+    const inserted = await client.query(`
+      INSERT INTO sales (${SALES_COLUMNS.join(', ')})
+      SELECT ${SALES_COLUMNS.join(', ')}
+      FROM pg_temp.laska_sales_import_stage
+    `);
+    const importedDates = [...dates].sort();
+    const salesHistoryDaily = await refreshSalesHistoryDaily({
+      dates: importedDates,
+      client,
+    });
+
+    await client.query('COMMIT');
+    return {
+      inserted: inserted.rowCount,
+      deleted: deleted.rowCount,
+      dates: importedDates,
+      rowsByFile,
+      salesHistoryDaily,
+    };
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
 };

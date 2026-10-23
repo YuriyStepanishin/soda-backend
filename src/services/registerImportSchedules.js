@@ -6,7 +6,7 @@ const isEnabled = (value, defaultValue) =>
   (value || defaultValue).toLowerCase() === 'true';
 
 export const registerImportSchedules = () => {
-  const timezone = process.env.APP_TIMEZONE || process.env.DB_TIMEZONE;
+  const timezone = process.env.DB_TIMEZONE;
   process.env.TZ = process.env.TZ || timezone;
 
   scheduleImport({
@@ -18,8 +18,8 @@ export const registerImportSchedules = () => {
   });
 
   scheduleImport({
-    enabled: isEnabled(process.env.LASKA_IMPORT_CRON_ENABLED, 'false'),
-    schedule: process.env.LASKA_IMPORT_CRON_SCHEDULE || '0 2 * * *',
+    enabled: isEnabled(process.env.LASKA_IMPORT_CRON_ENABLED, 'true'),
+    schedule: process.env.LASKA_IMPORT_CRON_SCHEDULE || '*/5 * * * *',
     timezone,
     label: 'LASKA Import Cron',
     run: processLaskaGoogleDriveImports,
