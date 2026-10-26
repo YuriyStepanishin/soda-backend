@@ -1,3 +1,5 @@
+import { getPool } from '../../../db/index.js';
+import { getFastRouteHistory } from '../../../models/laskaRouteHistoryModel.js';
 import { ROLES } from '../../../constants/roles.js';
 import { getPagination } from '../../../utils/getPagination.js';
 import {
@@ -304,6 +306,17 @@ const getLaskaRouteHistory = async (req, res) => {
       });
     }
 
+    if (['stores', 'details'].includes(req.query.view)) {
+      if (req.query.view === 'details' && (typeof req.query.storeCode !== 'string' || !req.query.storeCode.trim())) {
+        return res.status(400).json({ success: false, message: 'storeCode is required for details' });
+      }
+      const started = performance.now();
+      const result = await getFastRouteHistory({
+        pool: getPool('laska'), query: { ...getEffectiveQuery(req), period }, user: req.user,
+      });
+      console.log('[ROUTE HISTORY FAST] ' + req.query.view + ' ' + period + ': ' + Math.round(performance.now() - started) + 'ms');
+      return res.json(result);
+    }
     const groupingFields = String(req.query.groupingFields || 'tm')
       .split(',')
       .map((field) => field.trim().toLowerCase())
@@ -365,6 +378,7 @@ const getLaskaRouteHistory = async (req, res) => {
 
     return res.json(response);
   } catch (error) {
+    if (error.status === 400) return res.status(400).json({ success: false, message: error.message });
     console.error('[LASKA ROUTE HISTORY ERROR]', error);
     return res.status(500).json({
       success: false,

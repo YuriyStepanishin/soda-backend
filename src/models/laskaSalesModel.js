@@ -1,9 +1,5 @@
 import { getPool } from '../db/index.js';
 import { ROLES } from '../constants/roles.js';
-import {
-  ensureSalesHistoryPeriodRange,
-  ensureSalesHistoryRouteTmRange,
-} from './laskaSalesHistoryDailyModel.js';
 
 const laskaPool = getPool('laska');
 
@@ -594,15 +590,6 @@ export const buildSalesHistory = async ({ query: rawQuery = {}, user }) => {
   ];
 
   const summarizeProducts = query.summarizeProducts === true;
-  const canUseRouteTmSummary =
-    summarizeProducts &&
-    groupingFields.length === 1 &&
-    groupingFields[0] === 'tm' &&
-    !query.group &&
-    !query.subgroup &&
-    !query.packing &&
-    !query.manufacturer &&
-    !query.product;
   const storeSearch = String(query.storeSearch || '').trim();
 
   const applyAllowedValues = (allowedValues, requestedValues) => {
@@ -615,6 +602,8 @@ export const buildSalesHistory = async ({ query: rawQuery = {}, user }) => {
 
   const addFilters = (conditions, params, aliases = {}) => {
     const salesAlias = aliases.sales || 's';
+    if (user?.role === ROLES.SUPERVISOR && !normalizeFilterValues(query.departments).length) conditions.push('FALSE');
+    if (user?.role === ROLES.BRAND_MANAGER && !normalizeFilterValues(query.tms).length) conditions.push('FALSE');
     const productAlias = aliases.product || 'p';
 
     if (query.ta) {
@@ -629,6 +618,7 @@ export const buildSalesHistory = async ({ query: rawQuery = {}, user }) => {
       requestedDepartments,
     );
 
+    if (departments.length && requestedDepartments.length && !departmentValues.length) conditions.push('FALSE');
     if (departmentValues.length) {
       params.push(departmentValues);
       conditions.push(`
@@ -677,6 +667,7 @@ export const buildSalesHistory = async ({ query: rawQuery = {}, user }) => {
     const requestedTms = normalizeFilterValues(query.tm);
     const tmValues = applyAllowedValues(tms, requestedTms);
 
+    if (tms.length && requestedTms.length && !tmValues.length) conditions.push('FALSE');
     if (tmValues.length) {
       params.push(tmValues);
       conditions.push(`${productAlias}.tm = ANY($${params.length})`);
@@ -756,16 +747,17 @@ export const buildSalesHistory = async ({ query: rawQuery = {}, user }) => {
   const mainParams = [periodType, dateFrom, dateTo];
   addFilters(mainConditions, mainParams, { product: 's' });
 
-  if (canUseRouteTmSummary) {
-    await ensureSalesHistoryRouteTmRange({ periodType, dateFrom, dateTo });
-  } else {
-    await ensureSalesHistoryPeriodRange({ periodType, dateFrom, dateTo });
-  }
-
-  const historyTable = canUseRouteTmSummary
-    ? 'public.sales_history_route_tm_period'
-    : 'public.sales_history_period';
-
+  // Compatibility requests also aggregate daily rows directly. No table rebuild in a GET.
+  const historyTable = `(
+    SELECT d.*, $1::text AS period_type,
+      date_trunc($1::text, d.sale_date::timestamp)::date AS start_date,
+      CASE WHEN $1::text = 'week' THEN EXTRACT(ISOYEAR FROM d.sale_date)::int
+           ELSE EXTRACT(YEAR FROM d.sale_date)::int END AS year,
+      CASE WHEN $1::text = 'week' THEN EXTRACT(WEEK FROM d.sale_date)::int
+           ELSE EXTRACT(MONTH FROM d.sale_date)::int END AS period_number
+    FROM public.sales_history_daily d
+    WHERE d.sale_date BETWEEN $2::date AND $3::date
+  )`;
   const historySql = `
     SELECT
       s.store_code,

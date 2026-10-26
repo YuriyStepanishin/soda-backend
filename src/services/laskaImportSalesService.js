@@ -45,10 +45,14 @@ const dateToSqlDate = (value) => {
   const text = textOrNull(value);
   if (!text) return null;
 
-  const match = text.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+  const match = text.match(
+    /^(\d{1,2})\.(\d{1,2})\.(\d{4})(?:\s+\d{1,2}:\d{2}(?::\d{2})?)?$/,
+  );
   if (match) {
     const [, day, month, year] = match;
-    const date = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)));
+    const date = new Date(
+      Date.UTC(Number(year), Number(month) - 1, Number(day)),
+    );
     if (
       date.getUTCFullYear() !== Number(year) ||
       date.getUTCMonth() + 1 !== Number(month) ||
@@ -62,7 +66,9 @@ const dateToSqlDate = (value) => {
   const isoMatch = text.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (isoMatch) {
     const [, year, month, day] = isoMatch;
-    const date = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)));
+    const date = new Date(
+      Date.UTC(Number(year), Number(month) - 1, Number(day)),
+    );
     if (
       date.getUTCFullYear() !== Number(year) ||
       date.getUTCMonth() + 1 !== Number(month) ||
@@ -94,15 +100,15 @@ const rowToSale = (row, fileName, rowNumber) => {
 
   const missing = [
     ['дата', sale.sale_date],
-    ['ТТ', sale.ta],
     ['код магазину', sale.store_code],
     ['код товару', sale.product_code],
     ['номер накладної', sale.invoice_number],
     ['кількість', sale.quantity],
-    ['сума', sale.amount],
   ].find(([, value]) => value === null || value === undefined);
   if (missing) {
-    throw new Error(`${fileName}, рядок ${rowNumber}: некоректне поле "${missing[0]}"`);
+    throw new Error(
+      `${fileName}, рядок ${rowNumber}: некоректне поле "${missing[0]}"`,
+    );
   }
 
   return sale;
@@ -110,7 +116,9 @@ const rowToSale = (row, fileName, rowNumber) => {
 
 const insertStageBatch = async (client, rows) => {
   if (!rows.length) return;
-  const values = rows.flatMap((sale) => SALES_COLUMNS.map((column) => sale[column]));
+  const values = rows.flatMap((sale) =>
+    SALES_COLUMNS.map((column) => sale[column]),
+  );
   const placeholders = rows.map((_, rowIndex) => {
     const offset = rowIndex * SALES_COLUMNS.length;
     return `(${SALES_COLUMNS.map((__, columnIndex) => `$${offset + columnIndex + 1}`).join(', ')})`;
@@ -122,7 +130,14 @@ const insertStageBatch = async (client, rows) => {
   );
 };
 
-const readFile = async (filePath, fileName, fileKey, client, rowsByFile, dates) => {
+const readFile = async (
+  filePath,
+  fileName,
+  fileKey,
+  client,
+  rowsByFile,
+  dates,
+) => {
   const workbook = XLSX.readFile(filePath, { cellDates: true });
   const sheetName = workbook.SheetNames[0];
   if (!sheetName) throw new Error(`${fileName}: файл не містить аркуша`);
@@ -160,7 +175,8 @@ export const importLaskaSales = async (input) => {
   const files = (Array.isArray(input) ? input : [{ filePath: input }]).map(
     (file) => ({
       filePath: file.filePath,
-      fileName: file.name || file.fileName || file.filePath.split(/[\\/]/).pop(),
+      fileName:
+        file.name || file.fileName || file.filePath.split(/[\\/]/).pop(),
       id: file.id,
     }),
   );
