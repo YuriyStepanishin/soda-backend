@@ -96,50 +96,105 @@ export const importProducts = async () => {
     await downloadDictionary(DICTIONARY_FILES.products),
     { type: 'buffer' },
   );
+
   const sheet = workbook.Sheets[workbook.SheetNames[0]];
+
+  if (!sheet) {
+    throw new Error('У файлі відсутній аркуш із товарами');
+  }
 
   const rows = XLSX.utils.sheet_to_json(sheet, {
     defval: '',
   });
 
-  console.log('[LASKA] Заголовки:', Object.keys(rows[0] || {}));
-
   console.log(`[LASKA] Товарів у файлі: ${rows.length}`);
 
-  await laskaPool.query('TRUNCATE TABLE products RESTART IDENTITY');
-
-  for (const row of rows) {
-    await laskaPool.query(
-      `
-      INSERT INTO products (
-        product_name,
-        manufacturer,
-        tm,
-        group_name,
-        subgroup,
-        packaging
-      )
-      VALUES ($1, $2, $3, $4, $5, $6)
-      ON CONFLICT (product_name)
-      DO UPDATE SET
-        manufacturer = EXCLUDED.manufacturer,
-        tm = EXCLUDED.tm,
-        group_name = EXCLUDED.group_name,
-        subgroup = EXCLUDED.subgroup,
-        packaging = EXCLUDED.packaging
-      `,
-      [
-        String(row['товар'] ?? '').trim(),
-        String(row['Виробник'] ?? '').trim() || null,
-        String(row['ТМ'] ?? '').trim() || null,
-        String(row['Група'] ?? '').trim() || null,
-        String(row['Підгрупа'] ?? '').trim() || null,
-        String(row['Фасовка'] ?? '').trim() || null,
-      ],
-    );
+  if (rows.length === 0) {
+    throw new Error('Довідник товарів порожній');
   }
 
-  console.log(`[LASKA] Довідник товарів імпортовано: ${rows.length}`);
+  const requiredColumns = [
+    'Товар',
+    'Виробник',
+    'ТМ',
+    'Група',
+    'Підгрупа',
+    'Фасовка',
+  ];
 
-  return rows.length;
+  const headers = Object.keys(rows[0]);
+
+  for (const column of requiredColumns) {
+    if (!headers.includes(column)) {
+      throw new Error(`Відсутня колонка: ${column}`);
+    }
+  }
+
+  // Перевіряємо всі назви до запису в базу
+  const products = new Map();
+
+  for (const [index, row] of rows.entries()) {
+    const productName = String(row['Товар'] ?? '').trim();
+
+    if (!productName) {
+      throw new Error(`Порожня назва товару, рядок Excel: ${index + 2}`);
+    }
+
+    products.set(productName, [
+      productName,
+      String(row['Виробник'] ?? '').trim() || null,
+      String(row['ТМ'] ?? '').trim() || null,
+      String(row['Група'] ?? '').trim() || null,
+      String(row['Підгрупа'] ?? '').trim() || null,
+      String(row['Фасовка'] ?? '').trim() || null,
+    ]);
+  }
+
+  const client = await laskaPool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    // Повністю очищуємо довідник у межах транзакції
+    await client.query('DELETE FROM public.products');
+
+    let processed = 0;
+
+    for (const values of products.values()) {
+      await client.query(
+        `
+        INSERT INTO products (
+          product_name,
+          manufacturer,
+          tm,
+          group_name,
+          subgroup,
+          packaging
+        )
+        VALUES ($1, $2, $3, $4, $5, $6)
+        ON CONFLICT (product_name)
+        DO UPDATE SET
+          manufacturer = EXCLUDED.manufacturer,
+          tm = EXCLUDED.tm,
+          group_name = EXCLUDED.group_name,
+          subgroup = EXCLUDED.subgroup,
+          packaging = EXCLUDED.packaging
+        `,
+        values,
+      );
+
+      processed++;
+    }
+
+    await client.query('COMMIT');
+
+    console.log(`[LASKA] Довідник товарів імпортовано: ${processed}`);
+
+    return processed;
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
 };
