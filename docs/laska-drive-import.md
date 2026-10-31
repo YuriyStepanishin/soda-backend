@@ -1,6 +1,6 @@
 # LASKA Drive import
 
-LASKA reads Excel files only from `LASKA_UPLOADS_FOLDER_ID`. It no longer requires or reads `LASKA_ARCHIVE_FOLDER_ID`. Other tenants retain their existing archive workflow.
+LASKA reads Excel files only from `LASKA_UPLOADS_FOLDER_ID`. It no longer requires or reads `LASKA_ARCHIVE_FOLDER_ID`. OLGATORG now follows the same trash-after-commit policy; see `olgatorg-drive-import.md`.
 
 Each LASKA workbook is a full snapshot for the dates it contains. Pending workbooks are processed sequentially, oldest modified time first, with one database transaction per workbook. The latest snapshot replaces prior rows for its dates rather than combining several cumulative monthly snapshots.
 

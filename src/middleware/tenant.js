@@ -1,3 +1,4 @@
+import { isValidTenant } from '../config/tenants.js';
 import { mapUserToSalesTenant } from '../modules/sales/sales.mapper.js';
 import { findSalesAdapter } from '../modules/sales/sales.repository.js';
 import { ROLES } from '../constants/roles.js';
@@ -31,5 +32,13 @@ export const resolveSalesTenant = () => (req, res, next) => {
   req.salesTenant = tenant;
   req.salesAdapter = adapter;
 
+  return next();
+};
+
+export const validateSalesTenantHeader = (req, res, next) => {
+  const tenant = req.headers['x-tenant-id'];
+  if (tenant !== undefined && !isValidTenant(tenant)) {
+    return res.status(400).json({ success: false, message: 'Select exactly one company: olgatorg or laska' });
+  }
   return next();
 };

@@ -1,7 +1,10 @@
+import { validateDailyDateRange } from '../../../utils/dailySalesQuery.js';
 import { buildSalesWhere } from '../../../config/users_db/olgatorgUsers.js';
 import { buildRequestWhere } from '../../../utils/buildRequestWhere.js';
 import { getPagination } from '../../../utils/getPagination.js';
 import {
+  getSalesByDays as querySalesByDays,
+  getSalesByDaysFilters as querySalesByDaysFilters,
   findAllSales,
   findSaleById,
   countSales,
@@ -407,7 +410,23 @@ const getRouteHistory = withErrorResponse(async (req, res) => {
   });
 }, '[OLGATORG ROUTE HISTORY ERROR]');
 
+const getSalesByDays = withErrorResponse(async (req, res) => {
+  const filters = readSalesFilters(req.query);
+  const error = validateDailyDateRange(filters);
+  if (error) return res.status(400).json({ success: false, message: error });
+  return res.json({ success: true, data: await querySalesByDays(buildUserFilter(req.user, filters)) });
+}, '[OLGATORG SALES BY DAYS ERROR]');
+
+const getSalesByDaysFilters = withErrorResponse(async (req, res) => {
+  const filters = readSalesFilters(req.query);
+  const error = validateDailyDateRange(filters);
+  if (error) return res.status(400).json({ success: false, message: error });
+  return res.json({ success: true, ...(await querySalesByDaysFilters(filters, buildSalesWhere(req.user))) });
+}, '[OLGATORG SALES BY DAYS FILTERS ERROR]');
+
 export const olgatorgSalesAdapter = {
+  byDays: getSalesByDays,
+  byDaysFilters: getSalesByDaysFilters,
   list: getSales,
   getById: getSaleById,
   summary: getSalesSummary,

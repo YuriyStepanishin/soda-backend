@@ -1,6 +1,6 @@
 import { Pool } from 'pg';
 import 'dotenv/config';
-import { TENANT_VALUES } from '../config/tenants.js';
+import { isValidTenant, TENANT_VALUES } from '../config/tenants.js';
 
 const DB_TIMEZONE = process.env.DB_TIMEZONE || 'Europe/Kyiv';
 
@@ -47,7 +47,7 @@ export const pools = Object.fromEntries(
 );
 
 export const getPool = (tenant) => {
-  const db = pools[tenant];
+  const db = isValidTenant(tenant) ? pools[tenant] : null;
 
   if (!db) {
     throw new Error(`Unknown tenant: ${tenant}`);
@@ -56,25 +56,8 @@ export const getPool = (tenant) => {
   return db;
 };
 
+// Pool opens a socket only on its first query. Validate config at startup,
+// without waking both companies just because the API process was started.
 export const connectDatabases = async () => {
-  for (const [tenant, db] of Object.entries(pools)) {
-    try {
-      const result = await db.query(`
-        SELECT
-          current_database(),
-          current_schema()
-      `);
-
-      console.log(`✅ ${tenant.toUpperCase()} Neon підключено`);
-
-      console.log(result.rows[0]);
-    } catch (error) {
-      console.error(
-        `❌ Помилка підключення ${tenant.toUpperCase()} Neon:`,
-        error.message,
-      );
-
-      throw error;
-    }
-  }
+  console.log('✅ Company database pools configured (connect on first use)');
 };

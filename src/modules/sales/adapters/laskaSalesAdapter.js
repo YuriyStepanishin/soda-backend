@@ -1,3 +1,4 @@
+import { validateDailyDateRange } from '../../../utils/dailySalesQuery.js';
 import { getPool } from '../../../db/index.js';
 import { getFastRouteHistory } from '../../../models/laskaRouteHistoryModel.js';
 import { ROLES } from '../../../constants/roles.js';
@@ -11,6 +12,7 @@ import {
   getProducts,
   getHierarchy,
   getSalesByDays,
+  getSalesByDaysFilters,
   getSalesDrilldown,
   getSalesReportRows,
   buildSalesHistory,
@@ -116,6 +118,8 @@ const getLaskaHierarchy = async (req, res) => {
 
 const getLaskaSalesByDays = async (req, res) => {
   try {
+    const dateError = validateDailyDateRange(req.query);
+    if (dateError) return res.status(400).json({ success: false, message: dateError });
     if (!validateRequest(req, res)) return;
     return res.json({
       success: true,
@@ -415,6 +419,11 @@ export const laskaSalesAdapter = {
   hierarchy: getLaskaHierarchy,
   filters: getLaskaFilters,
   byDays: getLaskaSalesByDays,
+  byDaysFilters: async (req, res) => {
+    const error = validateDailyDateRange(req.query);
+    if (error) return res.status(400).json({ success: false, message: error });
+    return res.json({ success: true, ...(await getSalesByDaysFilters(req)) });
+  },
   drilldown: getLaskaSalesDrilldown,
   report: getLaskaSalesReport,
   history: getLaskaSalesHistory,
