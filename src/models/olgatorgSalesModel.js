@@ -1,3 +1,4 @@
+import { buildDailySalesQuery } from '../utils/dailySalesQuery.js';
 import { getPool } from '../db/index.js';
 import { buildRequestWhere } from '../utils/buildRequestWhere.js';
 
@@ -823,4 +824,25 @@ export const getSalesReportRows = async (groupBy, filter) => {
       amount: row.amount,
     };
   });
+};
+
+export const getSalesByDays = async (filter) => {
+  const result = await pool.query(buildDailySalesQuery({
+    table: 'sales',
+    date: 'sale_date',
+    store: `COALESCE('code:' || NULLIF(TRIM(outlet_code), ''), 'name:' || COALESCE(NULLIF(TRIM(alt_name), ''), NULLIF(TRIM(outlet_name), ''), NULLIF(TRIM(client_name), ''), 'Без ТТ'))`,
+    amount: 'amount',
+    weight: 'COALESCE(qty, 0) * COALESCE(weight, 0)',
+    where: filter.where,
+  }), filter.params);
+  return result.rows;
+};
+
+export const getSalesByDaysFilters = async (filters, roleFilter) => {
+  const [departments, agents, brands] = await Promise.all([
+    getDepartments(buildFilter(filters, roleFilter, 'department')),
+    getAgents(buildFilter(filters, roleFilter, 'agent')),
+    getBrands(buildFilter(filters, roleFilter, 'brands')),
+  ]);
+  return { departments, agents, brands };
 };

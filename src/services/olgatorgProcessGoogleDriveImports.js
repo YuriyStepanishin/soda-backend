@@ -1,14 +1,22 @@
 import { importOlgatorgSales } from './olgatorgSalesImportService.js';
-import { processDriveImports } from './processDriveImports.js';
+import { drive } from '../config/googleDrive.js';
+import { getSyncRecords, createSyncRecords } from '../models/olgatorgSyncModel.js';
+import { runOlgatorgDriveImports } from './olgatorgDriveImportRunner.js';
+import { fileURLToPath } from 'node:url';
 
-export const processGoogleDriveImports = async () =>
-  processDriveImports({
-    key: 'OLGATORG',
-    tenant: 'olgatorg',
-    fileType: 'sales',
-    prefix: 'olgatorg',
-    uploadsFolderEnv: 'UPLOADS_FOLDER_ID',
-    archiveFolderEnv: 'ARCHIVE_FOLDER_ID',
-    importService: importOlgatorgSales,
-    importAllFilesWhenChanged: true,
-  });
+let running = false;
+export const processGoogleDriveImports = async () => {
+  if (running) throw new Error('OLGATORG import is already running');
+  running = true;
+  try {
+    return await runOlgatorgDriveImports({
+      drive, uploadsFolder: process.env.UPLOADS_FOLDER_ID,
+      importService: importOlgatorgSales,
+      getRecords: () => getSyncRecords('sales', 'olgatorg'),
+      saveRecords: files => createSyncRecords({ tenant: 'olgatorg', fileType: 'sales', files }),
+      tempRoot: fileURLToPath(new URL('../../uploads/', import.meta.url)),
+    });
+  } finally {
+    running = false;
+  }
+};

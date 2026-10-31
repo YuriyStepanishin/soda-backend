@@ -1,4 +1,5 @@
 import { getPool } from '../db/index.js';
+import { buildDailySalesQuery } from '../utils/dailySalesQuery.js';
 import { ROLES } from '../constants/roles.js';
 
 const laskaPool = getPool('laska');
@@ -444,38 +445,53 @@ export const getSalesReportRows = async (groupBy, query) => {
   });
 };
 
-export const getSalesByDays = async (query) => {
+// Daily reports do not need both dictionary joins on every scan.
+const buildDailySource = (query, requiredColumns = '') => {
   const filter = buildLaskaWhere(query);
-  const result = await laskaPool.query(
-    `
-    WITH daily_store AS (
-      SELECT "Дата"::date AS sale_date, ${STORE_EXPR} AS store_name,
-             SUM(${numericValue('"Сумма"')}) AS store_amount
-      FROM public.sales_laska ${filter.where}
-      GROUP BY "Дата"::date, ${STORE_EXPR}
-    ),
-    daily AS (
-      SELECT sale_date, SUM(store_amount) AS amount, COUNT(*)::int AS "storesCount",
-             COUNT(*) FILTER (WHERE store_amount >= 500)::int AS tt500
-      FROM daily_store GROUP BY sale_date
-    ),
-    daily_weight AS (
-      SELECT "Дата"::date AS sale_date,
-             SUM(COALESCE(${numericValue('"Шт"')}, 0) * COALESCE(${numericValue('"Вес"')}, 0)) AS weight
-      FROM public.sales_laska ${filter.where}
-      GROUP BY "Дата"::date
-    )
-    SELECT d.sale_date AS date, EXTRACT(ISOYEAR FROM d.sale_date)::int AS week_year,
-           EXTRACT(WEEK FROM d.sale_date)::int AS week_number,
-           ROUND(d.amount::numeric, 2) AS amount,
-           ROUND(COALESCE(w.weight, 0)::numeric, 2) AS weight,
-           d."storesCount", d.tt500
-    FROM daily d LEFT JOIN daily_weight w ON w.sale_date = d.sale_date
-    ORDER BY d.sale_date DESC
-  `,
-    filter.params,
-  );
+  const referenced = filter.where + requiredColumns;
+  const columns = {
+    'Дата': 's.sale_date', 'ТА': 's.ta', 'Код ТТ': 's.store_code',
+    'ТТ': 's.store_name', 'Наименование товара': 's.product_name',
+    'Вес': 's.weight', 'Відділ': 'a.department', 'Маршрут': 'a.route',
+    'Виробник': 'p.manufacturer', 'ТМ': 'p.tm', 'Група': 'p.group_name', 'Підгрупа': 'p.subgroup',
+  };
+  const translate = (sql) => sql.replace(/"([^"\n]+)"/g, (match, column) => columns[column] || match);
+  let table = 'public.sales s';
+  if (/"(?:Відділ|Маршрут)"/.test(referenced)) {
+    table += ' LEFT JOIN public.agents a ON TRIM(s.ta) = TRIM(a.ta)';
+  }
+  if (/"(?:Виробник|ТМ|Група|Підгрупа)"/.test(referenced)) {
+    table += ' LEFT JOIN public.products p ON TRIM(s.product_name) = TRIM(p.product_name)';
+  }
+  return { table, where: translate(filter.where), params: filter.params, column: translate(requiredColumns) };
+};
+
+export const getSalesByDays = async (query) => {
+  const filter = buildDailySource(query);
+  const result = await laskaPool.query(buildDailySalesQuery({
+    table: filter.table,
+    date: 's.sale_date',
+    store: `COALESCE('code:' || NULLIF(TRIM(s.store_code), ''), 'name:' || COALESCE(NULLIF(TRIM(s.store_name), ''), 'Без ТТ'))`,
+    amount: 's.amount',
+    weight: 'COALESCE(s.quantity, 0) * COALESCE(s.weight, 0)',
+    where: filter.where,
+  }), filter.params);
   return result.rows;
+};
+
+export const getSalesByDaysFilters = async (req) => {
+  const fields = [ ['departments', 'department', '"Відділ"'], ['agents', 'agent', '"ТА"'], ['brands', 'brands', '"ТМ"'] ];
+  const entries = await Promise.all(fields.map(async ([key, ownFilter, column]) => {
+    // Remove only the UI selection, then reapply mandatory role restrictions.
+    const query = { ...req.query };
+    delete query[ownFilter];
+    const filter = buildDailySource(getEffectiveQuery({ query, user: req.user }), column);
+    const result = await laskaPool.query(
+      `SELECT DISTINCT ${filter.column} AS value FROM ${filter.table} ${filter.where} ORDER BY value`, filter.params,
+    );
+    return [key, result.rows.map(row => row.value).filter(Boolean)];
+  }));
+  return Object.fromEntries(entries);
 };
 
 export const buildSalesHistory = async ({ query: rawQuery = {}, user }) => {

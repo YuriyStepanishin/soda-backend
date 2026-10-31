@@ -1,13 +1,14 @@
 import { Router } from 'express';
 import { authenticate } from '../middleware/authenticate.js';
-import { resolveSalesTenant } from '../middleware/tenant.js';
+import { validateSalesTenantHeader, resolveSalesTenant } from '../middleware/tenant.js';
 import { isValidId } from '../middleware/isValidId.js';
 import { dispatchSalesOperation } from '../modules/sales/sales.controller.js';
 
 const router = Router();
-const withSalesTenant = [authenticate, resolveSalesTenant()];
+const withSalesTenant = [validateSalesTenantHeader, authenticate, resolveSalesTenant()];
 
 router.get('/summary', ...withSalesTenant, dispatchSalesOperation('summary'));
+router.get('/by-days/filters', ...withSalesTenant, dispatchSalesOperation('byDaysFilters'));
 router.get('/by-days', ...withSalesTenant, dispatchSalesOperation('byDays'));
 router.get('/history', ...withSalesTenant, dispatchSalesOperation('history'));
 router.get(

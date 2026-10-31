@@ -729,7 +729,7 @@ export const swaggerSpec = {
                       properties: {
                         found: { type: 'integer', example: 4 },
                         processed: { type: 'integer', example: 4 },
-                        archived: { type: 'integer', example: 4 },
+                        trashed: { type: 'integer', example: 4 },
                         failed: {
                           type: 'array',
                           items: {
