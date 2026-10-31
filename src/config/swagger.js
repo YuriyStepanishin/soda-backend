@@ -2,7 +2,7 @@ export const swaggerSpec = {
   openapi: '3.0.3',
   info: {
     title: 'SODA Backend API',
-    version: '1.0.0',
+    version: '3.4.0',
     description: 'API documentation for SODA backend services.',
   },
   servers: [
