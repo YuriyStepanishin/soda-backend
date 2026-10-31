@@ -18,10 +18,24 @@ const resolveGoogleCredentials = () => {
   );
 };
 
-const auth = new google.auth.GoogleAuth({
-  credentials: resolveGoogleCredentials(),
-  scopes: ['https://www.googleapis.com/auth/drive'],
-});
+const resolveAuth = () => {
+  const keys = ['GOOGLE_DRIVE_CLIENT_ID', 'GOOGLE_DRIVE_CLIENT_SECRET', 'GOOGLE_DRIVE_REFRESH_TOKEN'];
+  const configured = keys.filter(key => process.env[key]);
+  if (configured.length && configured.length !== keys.length) {
+    throw new Error('Google Drive owner OAuth requires all three GOOGLE_DRIVE_CLIENT_ID, GOOGLE_DRIVE_CLIENT_SECRET, GOOGLE_DRIVE_REFRESH_TOKEN');
+  }
+  if (configured.length) {
+    const oauth = new google.auth.OAuth2(process.env.GOOGLE_DRIVE_CLIENT_ID, process.env.GOOGLE_DRIVE_CLIENT_SECRET);
+    oauth.setCredentials({ refresh_token: process.env.GOOGLE_DRIVE_REFRESH_TOKEN });
+    return oauth;
+  }
+  return new google.auth.GoogleAuth({
+    credentials: resolveGoogleCredentials(),
+    scopes: ['https://www.googleapis.com/auth/drive'],
+  });
+};
+
+const auth = resolveAuth();
 
 export const drive = google.drive({
   version: 'v3',

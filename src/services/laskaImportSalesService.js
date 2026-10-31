@@ -1,4 +1,5 @@
 import XLSX from 'xlsx';
+import { laskaWorkbookRows } from './laskaWorkbookRows.js';
 import { getPool } from '../db/index.js';
 import { refreshSalesHistoryDaily } from '../models/laskaSalesHistoryDailyModel.js';
 
@@ -138,25 +139,15 @@ const readFile = async (
   rowsByFile,
   dates,
 ) => {
-  const workbook = XLSX.readFile(filePath, { cellDates: true });
-  const sheetName = workbook.SheetNames[0];
-  if (!sheetName) throw new Error(`${fileName}: файл не містить аркуша`);
-
-  const rows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], {
-    header: 1,
-    defval: null,
-    range: 5,
-  });
   let count = 0;
   let batch = [];
 
-  for (let index = 0; index < rows.length; index += 1) {
-    const row = rows[index];
+  for await (const { row, rowNumber } of laskaWorkbookRows(filePath)) {
     if (row.every((value) => value == null || String(value).trim() === '')) {
       continue;
     }
 
-    const sale = rowToSale(row, fileName, index + 6);
+    const sale = rowToSale(row, fileName, rowNumber);
     batch.push(sale);
     dates.add(sale.sale_date);
     count += 1;
