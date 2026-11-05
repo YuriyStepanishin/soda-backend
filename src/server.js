@@ -23,10 +23,13 @@ import laskaDictionaryRoutes from './routes/laskaDictionaryRoutes.js';
 import laskaUploadRoutes from './routes/laskaUploadRoutes.js';
 import laskaImportRoutes from './routes/laskaImportRoutes.js';
 
+import motivationRoutes from './modules/motivation/motivation.routes.js';
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(logger); // Логування запитів
+app.use('/api/motivation', express.json({ limit: '8mb' }));
 app.use(express.json({ limit: '1mb' })); // Дозволяє обробляти JSON в тілі запиту
 app.use(cors()); // Дозволяє запити з будь-яких джерел
 app.use(cookieParser()); // Дозволяє обробляти cookies
@@ -41,6 +44,7 @@ app.get('/health', (req, res) => {
 // Маршрут
 app.use('/api/auth', authRoutes);
 app.use('/api/sales', salesRoutes);
+app.use('/api/motivation', motivationRoutes);
 
 app.use('/api/upload', uploadRoutes);
 app.use('/api/upload/photos', uploadPhotosRoutes);
