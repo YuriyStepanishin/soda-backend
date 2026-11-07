@@ -252,7 +252,7 @@ const parseMonth = (value, saleDate, fileName, rowNumber) => {
 };
 
 const deriveDiscount = (amount, price, productPrices) => {
-  if (!productPrices) return { discount: null, priceType: null };
+  if (amount === null || !productPrices) return { discount: null, priceType: null };
 
   const { retailPrice, bplPrice, bpl5Price, bpl8Price } = productPrices;
   const hasRetailPrice = Number.isFinite(retailPrice) && retailPrice > 0;
@@ -299,11 +299,11 @@ export const parseOlgatorgSourceRow = ({
     throw sourceError(fileName, rowNumber, 'назва товару відсутня');
   }
 
-  const quantity = parseDecimal(values[7], 'Кво', fileName, rowNumber, true);
-  const amount = parseDecimal(values[8], 'Сума', fileName, rowNumber, true);
+  const quantity = parseDecimal(values[7], 'Кво', fileName, rowNumber, false);
+  const amount = parseDecimal(values[8], 'Сума', fileName, rowNumber, false);
   const weight = parseDecimal(values[6], 'Вага', fileName, rowNumber, false);
-  const price = quantity > 0 ? Number((amount / quantity).toFixed(2)) : 0;
-  if (!Number.isFinite(price)) {
+  const price = amount === null ? null : quantity > 0 ? Number((amount / quantity).toFixed(2)) : 0;
+  if (price !== null && !Number.isFinite(price)) {
     throw sourceError(fileName, rowNumber, 'обчислена ціна некоректна');
   }
 
@@ -414,8 +414,8 @@ const createStageTable = async (client) => {
       barcode text NOT NULL,
       volume varchar(50),
       weight numeric,
-      qty numeric NOT NULL,
-      amount numeric NOT NULL,
+      qty numeric,
+      amount numeric,
       client_code text,
       client_name text,
       address text,
@@ -425,7 +425,7 @@ const createStageTable = async (client) => {
       agent_name text,
       department text,
       supervisor_name text,
-      price numeric NOT NULL,
+      price numeric,
       discount text,
       alt_name text,
       price_type text
@@ -499,7 +499,7 @@ const assertNoSecondaryUniqueIndex = async (client) => {
   if (result.rows.length) {
     const names = result.rows.map((row) => row.indexname).join(', ');
     throw new Error(
-      `OLGATORG sales має UNIQUE-індекс(и) ${names}; видаліть їх у Neon перед імпортом, інакше повторні продажі не збережуться`,
+      `OLGATORG sales має UNIQUE-індекс(и) ${names}; імпорт зупинено до читання Excel. Перевірте схему: окремі продажі можуть мати однакові значення`,
     );
   }
 };
@@ -541,6 +541,7 @@ export const importOlgatorgSales = async (input) => {
   try {
     await client.query('BEGIN');
     await client.query('SELECT pg_advisory_xact_lock(73501421, 1)');
+    await assertNoSecondaryUniqueIndex(client);
     await createStageTable(client);
     const pricesMap = await readPrices(client);
     const pendingRows = [];
@@ -572,8 +573,6 @@ export const importOlgatorgSales = async (input) => {
     if (staged.rowCount !== expectedRows) {
       throw new Error('Кількість рядків у staging не збігається з кількістю прочитаних');
     }
-    await assertNoSecondaryUniqueIndex(client);
-
     if (staged.dates.length === 0) {
       await client.query('COMMIT');
       return { inserted: 0, deleted: 0, dates: [], rowsByFile };

@@ -1,3 +1,4 @@
+import { shapeHierarchyReport } from '../../../utils/salesHierarchyReport.js';
 import { validateDailyDateRange } from '../../../utils/dailySalesQuery.js';
 import { getPool } from '../../../db/index.js';
 import { getFastRouteHistory } from '../../../models/laskaRouteHistoryModel.js';
@@ -142,85 +143,12 @@ const GROUP_BY_VALUES = new Set([
   'agent',
 ]);
 
-const REPORT_LABEL_FIELDS = {
-  store: ['store', 'storeName'],
-  date: ['date'],
-  brand: ['brand', 'tm'],
-  product: ['product', 'productName'],
-  group: ['group'],
-  subgroup: ['subgroup'],
-  department: ['department'],
-  agent: ['agent'],
-};
-
-const REPORT_TOTAL_LABELS = {
-  store: 'Усі ТТ',
-  date: 'Усі дати',
-  brand: 'Усі торгові марки',
-  product: 'Усі товари',
-  group: 'Усі групи',
-  subgroup: 'Усі підгрупи',
-  department: 'Усі відділи',
-  agent: 'Усі ТП',
-};
-
 const toNumber = (value) => {
   const number = Number(value);
   return Number.isFinite(number) ? number : 0;
 };
 
-const pickLabel = (row, reportBy) => {
-  const fields = REPORT_LABEL_FIELDS[reportBy] || [];
-  for (const field of fields) {
-    if (row[field]) return String(row[field]);
-  }
-  return 'Без назви';
-};
-
-const buildReportResponse = ({ rows, reportBy }) => {
-  const normalizedRows = rows.map((row) => {
-    const label = row.label || pickLabel(row, reportBy);
-    return {
-      id: label,
-      label,
-      path: row.path || label,
-      level: toNumber(row.level),
-      dimensions: row.dimensions || {},
-      quantity: toNumber(row.quantity),
-      stores: toNumber(row.stores),
-      weight: toNumber(row.weight),
-      amount: toNumber(row.amount),
-      sku: toNumber(row.sku),
-    };
-  });
-
-  const totals = normalizedRows.reduce(
-    (acc, row) => ({
-      ...acc,
-      quantity: acc.quantity + row.quantity,
-      stores: acc.stores + row.stores,
-      weight: acc.weight + row.weight,
-      amount: acc.amount + row.amount,
-      sku: acc.sku + row.sku,
-    }),
-    {
-      id: 'total',
-      label: REPORT_TOTAL_LABELS[reportBy] || 'Разом',
-      quantity: 0,
-      stores: 0,
-      weight: 0,
-      amount: 0,
-      sku: 0,
-    },
-  );
-
-  return {
-    success: true,
-    reportBy,
-    rows: normalizedRows,
-    totals,
-  };
-};
+const buildReportResponse = ({ rows, reportBy }) => shapeHierarchyReport(rows, reportBy);
 
 const getLaskaSalesDrilldown = async (req, res) => {
   try {
@@ -259,7 +187,7 @@ const getLaskaSalesReport = async (req, res) => {
       .map((field) => field.trim())
       .filter(Boolean);
 
-    if (!reportBy.length || reportBy.some((field) => !GROUP_BY_VALUES.has(field))) {
+    if (!reportBy.length || new Set(reportBy).size !== reportBy.length || reportBy.some((field) => !GROUP_BY_VALUES.has(field))) {
       return res.status(400).json({
         success: false,
         message:

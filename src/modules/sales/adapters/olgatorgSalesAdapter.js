@@ -1,3 +1,4 @@
+import { shapeHierarchyReport } from '../../../utils/salesHierarchyReport.js';
 import { validateDailyDateRange } from '../../../utils/dailySalesQuery.js';
 import { buildSalesWhere } from '../../../config/users_db/olgatorgUsers.js';
 import { buildRequestWhere } from '../../../utils/buildRequestWhere.js';
@@ -79,81 +80,12 @@ const GROUP_BY_VALUES = new Set([
 ]);
 const GROUPING_FIELDS = new Set(['group', 'subgroup', 'tm', 'packing']);
 
-const REPORT_LABEL_FIELDS = {
-  store: ['storeName', 'store'],
-  date: ['date'],
-  brand: ['tm', 'brand'],
-  product: ['productName', 'product'],
-  department: ['department'],
-  agent: ['agent'],
-};
-
-const REPORT_TOTAL_LABELS = {
-  store: 'Усі ТТ',
-  date: 'Усі дати',
-  brand: 'Усі торгові марки',
-  product: 'Усі товари',
-  department: 'Усі відділи',
-  agent: 'Усі ТП',
-};
-
 const toNumber = (value) => {
   const number = Number(value);
   return Number.isFinite(number) ? number : 0;
 };
 
-const pickReportLabel = (row, reportBy) => {
-  const fields = REPORT_LABEL_FIELDS[reportBy] || [];
-  for (const field of fields) {
-    if (row[field]) return String(row[field]);
-  }
-  return 'Без назви';
-};
-
-const buildReportResponse = ({ rows, reportBy }) => {
-  const normalizedRows = rows.map((row) => {
-    const label = row.label || pickReportLabel(row, reportBy);
-    return {
-      id: label,
-      label,
-      path: row.path || label,
-      level: toNumber(row.level),
-      dimensions: row.dimensions || {},
-      quantity: toNumber(row.quantity),
-      stores: toNumber(row.stores),
-      weight: toNumber(row.weight),
-      amount: toNumber(row.amount),
-      sku: toNumber(row.sku),
-    };
-  });
-
-  const totals = normalizedRows.reduce(
-    (acc, row) => ({
-      ...acc,
-      quantity: acc.quantity + row.quantity,
-      stores: acc.stores + row.stores,
-      weight: acc.weight + row.weight,
-      amount: acc.amount + row.amount,
-      sku: acc.sku + row.sku,
-    }),
-    {
-      id: 'total',
-      label: REPORT_TOTAL_LABELS[reportBy] || 'Разом',
-      quantity: 0,
-      stores: 0,
-      weight: 0,
-      amount: 0,
-      sku: 0,
-    },
-  );
-
-  return {
-    success: true,
-    reportBy,
-    rows: normalizedRows,
-    totals,
-  };
-};
+const buildReportResponse = ({ rows, reportBy }) => shapeHierarchyReport(rows, reportBy);
 
 const isIsoDate = (value) => /^\d{4}-\d{2}-\d{2}$/.test(value);
 
@@ -283,6 +215,7 @@ const getSalesReport = withErrorResponse(async (req, res) => {
 
   if (
     !reportBy.length ||
+    new Set(reportBy).size !== reportBy.length ||
     reportBy.some((field) => !GROUP_BY_VALUES.has(field))
   ) {
     return res.status(400).json({

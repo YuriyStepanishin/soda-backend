@@ -788,11 +788,11 @@ export const getSalesReportRows = async (groupBy, filter) => {
       COUNT(DISTINCT COALESCE(NULLIF(TRIM(alt_name), ''), NULLIF(TRIM(outlet_name), ''), NULLIF(TRIM(client_name), '')))::int AS stores,
       ROUND(COALESCE(SUM(qty), 0)::numeric, 2) AS quantity,
       ROUND(COALESCE(SUM(qty * weight), 0)::numeric, 2) AS weight,
-      COUNT(*)::int AS sku,
+      COUNT(DISTINCT COALESCE('barcode:' || NULLIF(TRIM(barcode), ''), 'name:' || NULLIF(TRIM(product_name), '')))::int AS sku,
       ROUND(COALESCE(SUM(amount), 0)::numeric, 2) AS amount
     FROM sales
     ${filter.where}
-    GROUP BY GROUPING SETS (${groupingSetsSql})
+    GROUP BY GROUPING SETS ((), ${groupingSetsSql})
     ORDER BY ${orderBySql} NULLS FIRST
     `,
     filter.params,

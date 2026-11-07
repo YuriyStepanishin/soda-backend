@@ -13,7 +13,7 @@ export const registerImportSchedules = () => {
     enabled: isEnabled(process.env.IMPORT_CRON_ENABLED, 'true'),
     schedule: process.env.IMPORT_CRON_SCHEDULE || '*/5 * * * *',
     timezone,
-    label: 'Import Cron',
+    label: 'OLGATORG Import Cron',
     run: processGoogleDriveImports,
   });
 

@@ -2,19 +2,21 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createWriteStream } from 'node:fs';
 import { pipeline } from 'node:stream/promises';
+import { archiveDriveFile, validateArchiveConfig } from './driveArchive.js';
 
 // Each LASKA workbook is a complete snapshot of the dates it contains.
 // Process oldest first so a newer snapshot replaces, rather than duplicates, it.
 export async function runLaskaDriveImports({
-  drive, uploadsFolder, importService, getRecords, saveRecord, tempRoot,
+  drive, uploadsFolder, archiveFolder, importService, getRecords, saveRecord, tempRoot,
 }) {
   if (!uploadsFolder) throw new Error('LASKA_UPLOADS_FOLDER_ID is not configured');
+  validateArchiveConfig(uploadsFolder, archiveFolder);
   const files = [];
   let pageToken;
   do {
     const response = await drive.files.list({
       q: `'${uploadsFolder}' in parents and trashed=false`,
-      fields: 'nextPageToken,files(id,name,mimeType,modifiedTime,parents)',
+      fields: 'nextPageToken,files(id,name,mimeType,modifiedTime,version,parents)',
       orderBy: 'modifiedTime', pageSize: 1000, pageToken,
       supportsAllDrives: true, includeItemsFromAllDrives: true,
     });
@@ -23,7 +25,7 @@ export async function runLaskaDriveImports({
   } while (pageToken);
 
   const records = new Map((await getRecords()).map(record => [record.file_id, record]));
-  const summary = { found: files.length, processed: 0, inserted: 0, deleted: 0, trashed: 0, cleanupErrors: [] };
+  const summary = { found: files.length, processed: 0, inserted: 0, deleted: 0, archived: 0, cleanupErrors: [] };
   for (const file of files) {
     const record = records.get(file.id);
     const sameVersion = Number(record?.imported_rows) > 0 && record?.modified_time && file.modifiedTime &&
@@ -56,20 +58,8 @@ export async function runLaskaDriveImports({
     }
 
     try {
-      const current = await drive.files.get({
-        fileId: file.id, fields: 'id,modifiedTime,parents,trashed,capabilities(canTrash)', supportsAllDrives: true,
-      });
-      if (current.data.trashed) continue;
-      if (!file.modifiedTime || current.data.modifiedTime !== file.modifiedTime ||
-          !current.data.parents?.includes(uploadsFolder)) {
-        summary.cleanupErrors.push({ fileId: file.id, message: 'File changed or moved after listing; retained' });
-        continue;
-      }
-      if (!current.data.capabilities?.canTrash) {
-        throw new Error('Drive account cannot trash this file; authenticate as its owner');
-      }
-      await drive.files.update({ fileId: file.id, requestBody: { trashed: true }, supportsAllDrives: true });
-      summary.trashed += 1;
+      await archiveDriveFile({ drive, file, uploadsFolder, archiveFolder });
+      summary.archived += 1;
     } catch (error) {
       summary.cleanupErrors.push({ fileId: file.id, message: error.message });
       console.error(`[LASKA Import] Imported file ${file.id} retained: ${error.message}`);

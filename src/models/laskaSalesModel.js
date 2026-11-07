@@ -404,11 +404,11 @@ export const getSalesReportRows = async (groupBy, query) => {
       COUNT(DISTINCT ${STORE_EXPR})::int AS stores,
       ROUND(COALESCE(SUM(${numericValue('"Шт"')}), 0)::numeric, 2) AS quantity,
       ROUND(COALESCE(SUM(${numericValue('"Вес"')}), 0)::numeric, 2) AS weight,
-      COUNT(*)::int AS sku,
+      COUNT(DISTINCT NULLIF(TRIM("Наименование товара"), ''))::int AS sku,
       ROUND(COALESCE(SUM(${numericValue('"Сумма"')}), 0)::numeric, 2) AS amount
     FROM public.sales_laska
     ${filter.where}
-    GROUP BY GROUPING SETS (${groupingSetsSql})
+    GROUP BY GROUPING SETS ((), ${groupingSetsSql})
     ORDER BY ${orderBySql} NULLS FIRST
     `,
     filter.params,
