@@ -1,4 +1,5 @@
 import { shapeHierarchyReport } from '../../../utils/salesHierarchyReport.js';
+import { canViewVmd } from '../../../utils/reportVmd.js';
 import { validateDailyDateRange } from '../../../utils/dailySalesQuery.js';
 import { getPool } from '../../../db/index.js';
 import { getFastRouteHistory } from '../../../models/laskaRouteHistoryModel.js';
@@ -143,13 +144,6 @@ const GROUP_BY_VALUES = new Set([
   'agent',
 ]);
 
-const toNumber = (value) => {
-  const number = Number(value);
-  return Number.isFinite(number) ? number : 0;
-};
-
-const buildReportResponse = ({ rows, reportBy }) => shapeHierarchyReport(rows, reportBy);
-
 const getLaskaSalesDrilldown = async (req, res) => {
   try {
     const groupBy =
@@ -196,9 +190,10 @@ const getLaskaSalesReport = async (req, res) => {
     }
 
     const query = getEffectiveQuery(req);
-    const rows = await getSalesReportRows(reportBy, query);
+    const includeVmd = canViewVmd(req.user?.role);
+    const rows = await getSalesReportRows(reportBy, query, includeVmd);
 
-    return res.json(buildReportResponse({ rows, reportBy: reportBy.join(',') }));
+    return res.json(shapeHierarchyReport(rows, reportBy.join(','), { includeVmd }));
   } catch (error) {
     console.error('[LASKA REPORT ERROR]', error);
     return res.status(500).json({
@@ -324,7 +319,7 @@ const getLaskaFilters = async (req, res) => {
     if (!validateRequest(req, res)) return;
     return res.json({
       success: true,
-      ...(await getFilters(getEffectiveQuery(req))),
+      ...(await getFilters(getEffectiveQuery(req), req.user)),
     });
   } catch (error) {
     console.error('[LASKA FILTERS ERROR]', error);

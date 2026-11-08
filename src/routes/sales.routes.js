@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { salesResponseCache } from '../middleware/salesResponseCache.js';
 import { authenticate } from '../middleware/authenticate.js';
 import { validateSalesTenantHeader, resolveSalesTenant } from '../middleware/tenant.js';
 import { isValidId } from '../middleware/isValidId.js';
@@ -22,7 +23,7 @@ router.get(
   ...withSalesTenant,
   dispatchSalesOperation('drilldown'),
 );
-router.get('/report', ...withSalesTenant, dispatchSalesOperation('report'));
+router.get('/report', ...withSalesTenant, salesResponseCache.middleware, dispatchSalesOperation('report'));
 router.get('/stores', ...withSalesTenant, dispatchSalesOperation('stores'));
 router.get('/products', ...withSalesTenant, dispatchSalesOperation('products'));
 router.get('/dates', ...withSalesTenant, dispatchSalesOperation('dates'));
@@ -31,7 +32,7 @@ router.get(
   ...withSalesTenant,
   dispatchSalesOperation('hierarchy'),
 );
-router.get('/filters', ...withSalesTenant, dispatchSalesOperation('filters'));
+router.get('/filters', ...withSalesTenant, salesResponseCache.middleware, dispatchSalesOperation('filters'));
 router.get('/', ...withSalesTenant, dispatchSalesOperation('list'));
 router.get(
   '/:salesId',

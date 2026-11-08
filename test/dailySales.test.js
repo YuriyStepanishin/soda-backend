@@ -6,6 +6,7 @@ const { pools, getPool } = await import('../src/db/index.js');
 const { resolveSalesTenant, validateSalesTenantHeader } = await import('../src/middleware/tenant.js');
 const { validateDailyDateRange } = await import('../src/utils/dailySalesQuery.js');
 const { getSalesByDays: laskaDays, getSalesByDaysFilters: laskaFilters } = await import('../src/models/laskaSalesModel.js');
+const { getFilters: laskaReportFilters } = await import('../src/models/laskaSalesModel.js');
 const { getSalesByDays: olgaDays } = await import('../src/models/olgatorgSalesModel.js');
 const calls = [];
 for (const [tenant, pool] of Object.entries(pools)) {
@@ -49,7 +50,7 @@ test('one aggregate query to the selected pool; no unused dictionary joins', asy
   assert.deepEqual(calls.map(call => call.tenant), ['laska', 'olgatorg']);
   for (const { sql } of calls) {
     assert.match(sql, /TO_CHAR\(.*'YYYY-MM-DD'/);
-    assert.match(sql, /store_amount >= 500/);
+    assert.match(sql, /COUNT\(\*\)::int AS "storesCount"/);
     assert.doesNotMatch(sql, /daily_weight|REPLACE/);
   }
   assert.doesNotMatch(calls[0].sql, /JOIN/);
@@ -63,4 +64,22 @@ test('only three daily filter dictionaries; supervisor scope survives removing U
     assert.ok(call.params.some(value => Array.isArray(value) && value.includes('Allowed')));
     assert.match(call.sql, /a\.department = ANY/);
   }
+});
+
+test('report dictionaries remove only UI filters and retain mandatory role restrictions', async () => {
+  for (const user of [{ role: 'agent', representative: 'Agent' }, { role: 'supervisor', departments: ['Department'] }, { role: 'brand_manager', brands: ['Brand'] }]) {
+    calls.length = 0;
+    await laskaReportFilters({ dateFrom: '2026-11-01' }, user);
+    assert.equal(calls.length, 8);
+    const expected = user.representative || user.departments?.[0] || user.brands?.[0];
+    for (const call of calls) assert.ok(call.params.flat().includes(expected));
+  }
+});
+
+test('unfiltered admin dictionaries use one aggregate scan instead of eight queries', async () => {
+  calls.length = 0;
+  const result = await laskaReportFilters({ dateFrom: '2026-11-01', dateTo: '2026-11-04' }, { role: 'admin' });
+  assert.equal(calls.length, 1);
+  assert.match(calls[0].sql, /array_agg\(DISTINCT/);
+  assert.deepEqual(Object.keys(result), ['departments', 'agents', 'stores', 'brands', 'groups', 'subgroups', 'packings', 'products']);
 });

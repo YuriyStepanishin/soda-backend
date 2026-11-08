@@ -2,11 +2,14 @@ const metrics = ['quantity', 'stores', 'weight', 'amount', 'sku'];
 const number = value => Number.isFinite(Number(value)) ? Number(value) : 0;
 
 // The SQL grand total is calculated over the original authorized rows.
-export function shapeHierarchyReport(rows, reportBy) {
+export function shapeHierarchyReport(rows, reportBy, { includeVmd = false } = {}) {
   const fields = reportBy.split(',');
   const total = rows.find(row => Number(row.level) === -1);
   if (!total) throw new Error('Report query did not return its grand total');
-  const pickMetrics = row => Object.fromEntries(metrics.map(key => [key, number(row[key])]));
+  const pickMetrics = row => ({
+    ...Object.fromEntries(metrics.map(key => [key, number(row[key])])),
+    ...(includeVmd ? { vmd: row.vmd == null || !Number.isFinite(Number(row.vmd)) ? null : Number(row.vmd) } : {}),
+  });
   return {
     success: true,
     reportBy,

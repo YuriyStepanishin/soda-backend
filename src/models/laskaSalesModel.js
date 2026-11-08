@@ -1,4 +1,5 @@
 import { getPool } from '../db/index.js';
+import { vmdAggregate } from '../utils/reportVmd.js';
 import { buildDailySalesQuery } from '../utils/dailySalesQuery.js';
 import { ROLES } from '../constants/roles.js';
 
@@ -372,7 +373,7 @@ const REPORT_FIELD_CONFIG = {
   },
 };
 
-export const getSalesReportRows = async (groupBy, query) => {
+export const getSalesReportRows = async (groupBy, query, includeVmd = false) => {
   const fields = groupBy.filter((field) => REPORT_FIELD_CONFIG[field]);
   const effectiveFields = fields.length ? fields : ['brand'];
   const filter = buildLaskaWhere(query);
@@ -406,6 +407,7 @@ export const getSalesReportRows = async (groupBy, query) => {
       ROUND(COALESCE(SUM(${numericValue('"Вес"')}), 0)::numeric, 2) AS weight,
       COUNT(DISTINCT NULLIF(TRIM("Наименование товара"), ''))::int AS sku,
       ROUND(COALESCE(SUM(${numericValue('"Сумма"')}), 0)::numeric, 2) AS amount
+    ${includeVmd ? ', ' + vmdAggregate('"Цена"', '"Цена закупки"', '"Шт"') : ''}
     FROM public.sales_laska
     ${filter.where}
     GROUP BY GROUPING SETS ((), ${groupingSetsSql})
@@ -441,6 +443,7 @@ export const getSalesReportRows = async (groupBy, query) => {
       weight: row.weight,
       sku: row.sku,
       amount: row.amount,
+      ...(includeVmd ? { vmd: row.vmd } : {}),
     };
   });
 };
@@ -998,7 +1001,7 @@ export const getRouteHistoryFilters = async ({ ta, department }) => {
   return result.rows;
 };
 
-export const getFilters = async (query) => {
+export const getFilters = async (query, user) => {
   const buildFilterFor = (key) => {
     const scopedQuery = { ...query };
     const keyMap = {
@@ -1016,7 +1019,7 @@ export const getFilters = async (query) => {
       delete scopedQuery[field];
     }
 
-    return buildLaskaWhere(scopedQuery);
+    return getEffectiveQuery({ query: scopedQuery, user });
   };
 
   const queries = [
@@ -1029,9 +1032,15 @@ export const getFilters = async (query) => {
     ['packings', '"Вес"::text'],
     ['products', '"Наименование товара"'],
   ];
+  if (user?.role === ROLES.ADMIN && Object.keys(query).every(key => ['dateFrom', 'dateTo'].includes(key))) {
+    const filter = buildLaskaWhere(query);
+    const aggregate = queries.map(([key, column]) => `array_agg(DISTINCT ${column} ORDER BY ${column}) AS ${key}`).join(', ');
+    const result = await laskaPool.query(`SELECT ${aggregate} FROM public.sales_laska ${filter.where}`, filter.params);
+    return Object.fromEntries(queries.map(([key]) => [key, (result.rows[0]?.[key] || []).filter(Boolean)]));
+  }
   const results = await Promise.all(
     queries.map(([key, column]) => {
-      const filter = buildFilterFor(key);
+      const filter = buildLaskaWhere(buildFilterFor(key));
       return laskaPool.query(
         `SELECT DISTINCT ${column} AS value FROM public.sales_laska ${filter.where} ORDER BY value`,
         filter.params,

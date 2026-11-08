@@ -12,8 +12,7 @@ export const buildDailySalesQuery = ({ table, date, store, amount, weight, where
          EXTRACT(WEEK FROM sale_date)::int AS week_number,
          ROUND(COALESCE(SUM(store_amount), 0)::numeric, 2) AS amount,
          ROUND(COALESCE(SUM(store_weight), 0)::numeric, 2) AS weight,
-         COUNT(*)::int AS "storesCount",
-         COUNT(*) FILTER (WHERE store_amount >= 500)::int AS tt500
+         COUNT(*)::int AS "storesCount"
   FROM daily_store
   GROUP BY sale_date
   ORDER BY sale_date DESC

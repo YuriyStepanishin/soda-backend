@@ -1,4 +1,5 @@
 import XLSX from 'xlsx';
+import { salesResponseCache } from '../middleware/salesResponseCache.js';
 import { getPool } from '../db/index.js';
 import { drive } from '../config/googleDrive.js';
 
@@ -87,6 +88,7 @@ export const importAgents = async () => {
   }
 
   console.log(`[LASKA] Довідник ТА імпортовано: ${rows.length}`);
+  salesResponseCache.invalidate('laska');
 
   return rows.length;
 };
@@ -187,6 +189,7 @@ export const importProducts = async () => {
     }
 
     await client.query('COMMIT');
+    salesResponseCache.invalidate('laska');
 
     console.log(`[LASKA] Довідник товарів імпортовано: ${processed}`);
 

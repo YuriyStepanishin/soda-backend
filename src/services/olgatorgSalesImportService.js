@@ -1,4 +1,5 @@
 import XLSX from 'xlsx';
+import { salesResponseCache } from '../middleware/salesResponseCache.js';
 import { agentDepartments } from '../config/users_db/olgatorgUsers.js';
 import { getPool } from '../db/index.js';
 import {
@@ -601,6 +602,7 @@ export const importOlgatorgSales = async (input) => {
     }
 
     await client.query('COMMIT');
+    salesResponseCache.invalidate('olgatorg');
     return {
       inserted: inserted.rowCount,
       deleted: deleted.rowCount,

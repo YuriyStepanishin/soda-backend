@@ -1,5 +1,7 @@
 import { buildDailySalesQuery } from '../utils/dailySalesQuery.js';
 import { getPool } from '../db/index.js';
+import { salesResponseCache } from '../middleware/salesResponseCache.js';
+import { vmdAggregate } from '../utils/reportVmd.js';
 import { buildRequestWhere } from '../utils/buildRequestWhere.js';
 
 const pool = getPool('olgatorg');
@@ -168,6 +170,7 @@ export const getSalesByPeriod = async (dateFrom, dateTo) => {
 
 export const deleteAllSales = async () => {
   await pool.query('TRUNCATE TABLE sales RESTART IDENTITY');
+  salesResponseCache.invalidate('olgatorg');
 };
 
 export const getSalesCount = async () => {
@@ -191,6 +194,7 @@ export const insertSalesBatch = async (rows) => {
 
     await client.query('COMMIT');
 
+    salesResponseCache.invalidate('olgatorg');
     return rows.length;
   } catch (error) {
     await client.query('ROLLBACK');
@@ -214,6 +218,7 @@ export const replaceAllSales = async (rows) => {
 
     await client.query('COMMIT');
 
+    salesResponseCache.invalidate('olgatorg');
     return rows.length;
   } catch (error) {
     await client.query('ROLLBACK');
@@ -758,7 +763,7 @@ const REPORT_FIELD_CONFIG = {
   },
 };
 
-export const getSalesReportRows = async (groupBy, filter) => {
+export const getSalesReportRows = async (groupBy, filter, includeVmd = false) => {
   const fields = groupBy.filter((field) => REPORT_FIELD_CONFIG[field]);
   const effectiveFields = fields.length ? fields : ['brand'];
   const expressions = effectiveFields.map(
@@ -790,6 +795,7 @@ export const getSalesReportRows = async (groupBy, filter) => {
       ROUND(COALESCE(SUM(qty * weight), 0)::numeric, 2) AS weight,
       COUNT(DISTINCT COALESCE('barcode:' || NULLIF(TRIM(barcode), ''), 'name:' || NULLIF(TRIM(product_name), '')))::int AS sku,
       ROUND(COALESCE(SUM(amount), 0)::numeric, 2) AS amount
+      ${includeVmd ? ', ' + vmdAggregate('price', 'purchase_price', 'qty') : ''}
     FROM sales
     ${filter.where}
     GROUP BY GROUPING SETS ((), ${groupingSetsSql})
@@ -822,6 +828,7 @@ export const getSalesReportRows = async (groupBy, filter) => {
       weight: row.weight,
       sku: row.sku,
       amount: row.amount,
+      ...(includeVmd ? { vmd: row.vmd } : {}),
     };
   });
 };

@@ -1,4 +1,6 @@
 import express from 'express';
+import { readFileSync } from 'node:fs';
+import compression from 'compression';
 import 'dotenv/config';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
@@ -27,6 +29,7 @@ import motivationRoutes from './modules/motivation/motivation.routes.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const APP_VERSION = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
 
 app.use(logger); // Логування запитів
 app.use('/api/motivation', express.json({ limit: '8mb' }));
@@ -38,12 +41,12 @@ app.get('/api-docs.json', (req, res) => {
   res.json(swaggerSpec);
 });
 app.get('/health', (req, res) => {
-  res.status(200).json({ status: 'ok' });
+  res.status(200).json({ status: 'ok', version: APP_VERSION });
 });
 
 // Маршрут
 app.use('/api/auth', authRoutes);
-app.use('/api/sales', salesRoutes);
+app.use('/api/sales', compression({ threshold: 1024, level: 4 }), salesRoutes);
 app.use('/api/motivation', motivationRoutes);
 
 app.use('/api/upload', uploadRoutes);

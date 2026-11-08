@@ -1,5 +1,9 @@
 # OLGATORG sales_unique_row
 
+## Applied on 2026-11-08
+
+After explicit user approval, the guarded migration was applied to Neon project olga-db (muddy-fog-57776285), using the importer's advisory transaction lock. Only public.sales_unique_row was dropped after checking its exact definition and lack of constraint ownership. Post-checks confirmed that the index is absent, the primary key remains valid, and no secondary UNIQUE indexes remain to block this importer. No sales rows were changed by this migration. The earlier preparation notes below describe the state before this execution; successful workbook import is a separate check.
+
 Read-only inspection on 2026-11-07 confirmed that public.sales_unique_row is a standalone UNIQUE btree index on (sale_date, product_name, barcode, qty, amount, outlet_name, outlet_code). It is not the primary key, is not owned by a constraint and has no referencing foreign keys. sales_pkey remains the primary key on id.
 
 The index cannot distinguish two legitimate source sales with identical values in those columns. The importer preserves source rows and replaces the complete uploaded date set in a transaction, under the existing advisory lock. Unchanged imported Drive versions are tracked in sync_history. These protections remain unchanged; source duplicates within an export are not silently deduplicated.

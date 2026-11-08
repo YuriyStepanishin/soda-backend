@@ -1,4 +1,5 @@
 import XLSX from 'xlsx';
+import { salesResponseCache } from '../middleware/salesResponseCache.js';
 import { laskaWorkbookRows } from './laskaWorkbookRows.js';
 import { getPool } from '../db/index.js';
 import { refreshSalesHistoryDaily } from '../models/laskaSalesHistoryDailyModel.js';
@@ -234,6 +235,7 @@ export const importLaskaSales = async (input) => {
     });
 
     await client.query('COMMIT');
+    salesResponseCache.invalidate('laska');
     return {
       inserted: inserted.rowCount,
       deleted: deleted.rowCount,

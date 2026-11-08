@@ -17,6 +17,20 @@ const aggregate = (level, a, b, quantity, stores, sku) => ({
   level, dimension_0: a, dimension_1: b, quantity, weight: quantity, amount: quantity * 10, stores, sku,
 });
 for (const [tenant, adapter] of [['laska', laskaSalesAdapter], ['olgatorg', olgatorgSalesAdapter]]) {
+  test(tenant + ': report API enforces VMD roles even with a forged query flag', async () => {
+    data = [{ ...aggregate(-1, null, null, 2, 1, 1), vmd: '15.50' }, { ...aggregate(0, 'Brand', null, 2, 1, 1), vmd: '15.50' }];
+    for (const role of ['admin', 'manager', 'supervisor', 'agent', 'brand_manager']) {
+      calls.length = 0;
+      const res = response();
+      await adapter.report({ query: { reportBy: 'brand', includeVmd: 'true' }, user: { role, representative: 'Allowed', departments: ['Department'], brands: ['Brand'] } }, res);
+      const allowed = ['admin', 'manager', 'supervisor'].includes(role);
+      assert.equal(res.code, undefined);
+      assert.equal(Object.hasOwn(res.body.totals, 'vmd'), allowed);
+      assert.equal(Object.hasOwn(res.body.rows[0], 'vmd'), allowed);
+      assert.equal(calls[0].sql.includes(' AS vmd'), allowed);
+      if (allowed) assert.equal(res.body.totals.vmd, 15.5);
+    }
+  });
   test(tenant + ': hierarchy order, SQL grand total, distinct metrics and authorization survive', async () => {
     data = [
       aggregate(-1, null, null, 17, 1, 2),

@@ -27,11 +27,11 @@ export const users = {
     representative: 'Горeцька Тетяна Петрівна',
   },
 
-  'ks_sup@gmail.com': {
+  'gromov13@ukr.net': {
     role: ROLES.SUPERVISOR,
     tenant: 'laska',
     departments: ['Місто'],
-    representative: 'Сергій Кузнєцов',
+    representative: 'Сергій',
   },
 
   'email_brand@gmail.com': {

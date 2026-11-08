@@ -1,4 +1,5 @@
 import { shapeHierarchyReport } from '../../../utils/salesHierarchyReport.js';
+import { canViewVmd } from '../../../utils/reportVmd.js';
 import { validateDailyDateRange } from '../../../utils/dailySalesQuery.js';
 import { buildSalesWhere } from '../../../config/users_db/olgatorgUsers.js';
 import { buildRequestWhere } from '../../../utils/buildRequestWhere.js';
@@ -56,7 +57,7 @@ const getSummary = async (user, filters) => {
 const getDrilldown = (user, groupBy, filters) =>
   querySalesDrilldown(groupBy, buildUserFilter(user, filters));
 const getReportRows = (user, groupBy, filters) =>
-  querySalesReportRows(groupBy, buildUserFilter(user, filters));
+  querySalesReportRows(groupBy, buildUserFilter(user, filters), canViewVmd(user?.role));
 
 const getSale = (user, id) => findSaleById(id, buildUserFilter(user, {}));
 const getStores = (user, filters) =>
@@ -79,13 +80,6 @@ const GROUP_BY_VALUES = new Set([
   'agent',
 ]);
 const GROUPING_FIELDS = new Set(['group', 'subgroup', 'tm', 'packing']);
-
-const toNumber = (value) => {
-  const number = Number(value);
-  return Number.isFinite(number) ? number : 0;
-};
-
-const buildReportResponse = ({ rows, reportBy }) => shapeHierarchyReport(rows, reportBy);
 
 const isIsoDate = (value) => /^\d{4}-\d{2}-\d{2}$/.test(value);
 
@@ -229,7 +223,7 @@ const getSalesReport = withErrorResponse(async (req, res) => {
   if (!filters) return;
 
   const rows = await getReportRows(req.user, reportBy, filters);
-  return res.json(buildReportResponse({ rows, reportBy: reportBy.join(',') }));
+  return res.json(shapeHierarchyReport(rows, reportBy.join(','), { includeVmd: canViewVmd(req.user?.role) }));
 }, '[OLGATORG REPORT ERROR]');
 
 const getSaleById = withErrorResponse(async (req, res) => {
