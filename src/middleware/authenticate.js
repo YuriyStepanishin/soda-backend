@@ -21,9 +21,15 @@ export const authenticate = async (req, res, next) => {
     });
   }
 
+  let payload;
   try {
-    // Верифікуємо токен і відновлюємо актуальні права з БД/конфіга.
-    const payload = jwt.verify(token, process.env.JWT_SECRET);
+    payload = jwt.verify(token, process.env.JWT_SECRET);
+    if (typeof payload.email !== 'string') throw new Error('Missing identity');
+  } catch {
+    return res.status(401).json({ success: false, message: 'Сесія завершилася. Увійдіть у застосунок повторно.' });
+  }
+
+  try {
 
     const userContext = await getAuthContextByEmail(payload.email);
 
@@ -38,9 +44,10 @@ export const authenticate = async (req, res, next) => {
 
     next();
   } catch {
-    return res.status(401).json({
+    // A database outage must not revoke a valid session or its offline reports.
+    return res.status(503).json({
       success: false,
-      message: 'Invalid or expired token',
+      message: 'Сервіс авторизації тимчасово недоступний. Спробуйте ще раз.',
     });
   }
 };
