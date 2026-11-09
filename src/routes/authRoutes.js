@@ -11,6 +11,9 @@ const router = Router();
 
 // Авторизація: валідація тіла -> контролер логіну.
 router.post('/login', validateBody(loginSchema), login);
+router.get('/session', authenticate, (req, res) => {
+  res.json({ success: true, data: { user: req.user } });
+});
 // Зміна пароля: спочатку JWT-автентифікація, далі валідація тіла, потім контролер.
 router.post(
   '/change-password',
