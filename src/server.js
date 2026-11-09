@@ -26,6 +26,7 @@ import laskaUploadRoutes from './routes/laskaUploadRoutes.js';
 import laskaImportRoutes from './routes/laskaImportRoutes.js';
 
 import motivationRoutes from './modules/motivation/motivation.routes.js';
+import receivablesRoutes from './modules/receivables/receivables.routes.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -48,6 +49,7 @@ app.get('/health', (req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/sales', compression({ threshold: 1024, level: 4 }), salesRoutes);
 app.use('/api/motivation', motivationRoutes);
+app.use('/api/laska/receivables', receivablesRoutes);
 
 app.use('/api/upload', uploadRoutes);
 app.use('/api/upload/photos', uploadPhotosRoutes);
