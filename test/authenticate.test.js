@@ -41,3 +41,21 @@ test('removed user returns 403', async () => {
   await authenticate(request(token({ expiresIn: '7d' })), response, () => assert.fail('removed user accepted'));
   assert.equal(response.code, 403);
 });
+test('new regional representative uses the exact dictionary name and agent-only data scope', async () => {
+  const {users}=await import('../src/config/users_db/laskaUsers.js');
+  const entry=Object.entries(users).find(([,profile])=>profile.representative==='Алексеєв Роман');
+  assert.ok(entry);
+  const [newEmail]=entry;
+  pools.laska.query=async()=>({rows:[{id:99,email:newEmail,role:'agent'}]});
+  const req=request(jwt.sign({id:99,email:newEmail},process.env.JWT_SECRET,{expiresIn:'7d'}));
+  let accepted=false;
+  await authenticate(req,res(),()=>{accepted=true;});
+  assert.ok(accepted);
+  assert.equal(req.user.representative,'Алексеєв Роман');
+  assert.equal(req.user.department,'Областний відділ');
+  assert.equal(req.user.tenant,'laska');
+  assert.equal(req.user.role,'agent');
+  const plan=createRouteHistoryPlan({query:{view:'stores',agent:'Інший агент'},user:req.user});
+  assert.ok(plan.stores.params.some(value=>Array.isArray(value)&&value.includes('Алексеєв Роман')));
+  assert.ok(!plan.stores.params.some(value=>Array.isArray(value)&&value.includes('Інший агент')));
+});
