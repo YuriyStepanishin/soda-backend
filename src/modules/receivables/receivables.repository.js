@@ -68,6 +68,7 @@ export function createReceivablesRepository(pool) {
           COALESCE(SUM(balance) FILTER(WHERE balance<0),0)::float8 AS prepayment,
           COALESCE(SUM(balance) FILTER(WHERE balance>0 AND NOT is_network AND shipped_days>=14),0)::float8 AS overdue,
           COALESCE(SUM(balance) FILTER(WHERE balance>0 AND NOT is_network AND shipped_days>=21),0)::float8 AS penalty,
+          ROUND(COALESCE(SUM(balance) FILTER(WHERE balance>0 AND NOT is_network AND shipped_days>=21),0) * 0.01, 2)::float8 AS "penaltyAmount",
           COUNT(DISTINCT (route,store_name))::int AS stores FROM laska_receivables WHERE ${where}`, params)).rows[0];
         const statusCondition = query.status ? ` AND (${status}) = $${params.length + 1}` : '';
         const filteredParams = query.status ? [...params, query.status] : params;

@@ -52,7 +52,9 @@ before database insertion.
 
 Negative balance = Переплата. Positive balance, non-network, days >=14 =
 Просрочка; >=21 = Штраф ТП. The 21+ subtotal is included in 14+. Networks are
-excluded from both overdue subtotals. No monetary penalty amount is invented.
+excluded from both overdue subtotals. The monetary penalty is 1% of the selected
+21+ balance, rounded once to two decimal places after aggregation. The API returns
+the base as `totals.penalty` and the monetary penalty as `totals.penaltyAmount`.
 Shipped days come from the export and are not advanced while balances are stale.
 The UI shows the inferred report date and import time separately.
 
@@ -67,7 +69,8 @@ no-store and the React query key includes the user identity and tenant.
 
 The macro excludes other document types and partner-level adjustments. Preserve
 any difference between the sale/return total and the 1C grand total in sync
-metadata and show it to managers. Customer data, network names and financial
+metadata for diagnostics. Do not display this technical difference in the UI.
+Customer data, network names and financial
 results belong in the database and Drive, never in this public repository.
 
 ## Validation
