@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { buildScope } from './receivables.domain.js';
+import { representativeCondition } from './receivables.filters.js';
 const schema = readFileSync(new URL('./receivables.schema.sql', import.meta.url), 'utf8');
 export function createReceivablesRepository(pool) {
   let ready;
@@ -50,12 +51,15 @@ export function createReceivablesRepository(pool) {
       const scope = buildScope(user);
       const params = [...scope.params];
       const conditions = [scope.sql];
-      const add = (sql, value) => { params.push(value); conditions.push(sql.replace('?', `$${params.length}`)); };
+      const add = (sql, value) => { params.push(value); conditions.push(sql.replaceAll('?', `$${params.length}`)); };
       if (query.agent) add('agent = ?', query.agent);
       if (query.route) add('route = ?', query.route);
+      if (query.representatives?.length) {
+        params.push(JSON.stringify(query.representatives));
+        conditions.push(representativeCondition(params.length));
+      }
       if (query.search) add("(store_name ILIKE ? OR document_number ILIKE ?)", `%${query.search}%`);
-      // search uses the same bound value twice.
-      const where = conditions.join(' AND ').replace(/\?/g, `$${params.length}`);
+      const where = conditions.join(' AND ');
       const status = `CASE WHEN balance<0 THEN 'prepayment' WHEN balance>0 AND NOT is_network AND shipped_days>=21 THEN 'penalty'
         WHEN balance>0 AND NOT is_network AND shipped_days>=14 THEN 'overdue' ELSE 'current' END`;
       const client = await pool.connect();
@@ -70,8 +74,9 @@ export function createReceivablesRepository(pool) {
           COALESCE(SUM(balance) FILTER(WHERE balance>0 AND NOT is_network AND shipped_days>=21),0)::float8 AS penalty,
           ROUND(COALESCE(SUM(balance) FILTER(WHERE balance>0 AND NOT is_network AND shipped_days>=21),0) * 0.01, 2)::float8 AS "penaltyAmount",
           COUNT(DISTINCT (route,store_name))::int AS stores FROM laska_receivables WHERE ${where}`, params)).rows[0];
-        const statusCondition = query.status ? ` AND (${status}) = $${params.length + 1}` : '';
-        const filteredParams = query.status ? [...params, query.status] : params;
+        const selectedStatuses = query.statuses ?? (query.status ? [query.status] : null);
+        const statusCondition = selectedStatuses ? ` AND (${status}) = ANY($${params.length + 1}::text[])` : '';
+        const filteredParams = selectedStatuses ? [...params, selectedStatuses] : params;
         const total = (await client.query(`SELECT COUNT(*)::int AS count FROM laska_receivables WHERE ${where}${statusCondition}`, filteredParams)).rows[0].count;
         const page = Number(query.page || 1), limit = 100;
         const rows = (await client.query(`SELECT source_row AS id,route,store_name AS store,agent,department,document_date::text AS date,

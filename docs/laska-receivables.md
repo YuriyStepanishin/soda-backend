@@ -1,6 +1,12 @@
 # Дебіторка Ласки
 
 `GET /api/laska/receivables` reads only the LASKA Neon table `laska_receivables`.
+The `representatives` query parameter accepts a JSON array of `{agent,route}`
+pairs for the combined checkbox filter. Each pair is matched together, under the
+mandatory user scope. `statuses` accepts a JSON array of status keys, allowing
+several statuses at once. An empty statuses array returns no invoices. An empty
+representatives array means all accessible representatives. Legacy single-value
+`agent`, `route`, and `status` filters remain supported.
 The browser never reads the Drive export. `laska_receivables_sync` records the
 source version, report date, import time and control-total discrepancy.
 
