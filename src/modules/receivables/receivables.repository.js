@@ -79,9 +79,12 @@ export function createReceivablesRepository(pool) {
         const filteredParams = selectedStatuses ? [...params, selectedStatuses] : params;
         const total = (await client.query(`SELECT COUNT(*)::int AS count FROM laska_receivables WHERE ${where}${statusCondition}`, filteredParams)).rows[0].count;
         const page = Number(query.page || 1), limit = 100;
-        const rows = (await client.query(`SELECT source_row AS id,route,store_name AS store,agent,department,document_date::text AS date,
+        const rows = (await client.query(`WITH scoped AS (
+          SELECT *, SUM(balance) OVER (PARTITION BY agent,department,route,store_name) AS store_balance
+          FROM laska_receivables WHERE ${scope.sql}
+        ) SELECT source_row AS id,route,store_name AS store,agent,department,document_date::text AS date,
           document_number AS number,document_type AS type,shipped_days AS days,document_amount::float8 AS amount,balance::float8,
-          is_network AS network,${status} AS status FROM laska_receivables WHERE ${where}${statusCondition}
+          store_balance::float8 AS "storeBalance",is_network AS network,${status} AS status FROM scoped AS laska_receivables WHERE ${where}${statusCondition}
           ORDER BY route,store_name,document_date,source_row LIMIT ${limit} OFFSET $${filteredParams.length + 1}`,
         [...filteredParams, (page - 1) * limit])).rows;
         await client.query('COMMIT');

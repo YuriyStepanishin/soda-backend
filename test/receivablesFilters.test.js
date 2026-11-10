@@ -24,6 +24,9 @@ test('paired selections and checkbox statuses retain mandatory agent scope and b
   assert.match(list.sql,/WHERE agent = \$1 AND EXISTS/);
   assert.match(list.sql,/agent IS NOT DISTINCT FROM selected.agent AND laska_receivables.route = selected.route/);
   assert.match(list.sql,/ANY\(\$4::text\[\]\)/);
+  assert.match(list.sql,/SUM\(balance\) OVER \(PARTITION BY agent,department,route,store_name\)/);
+  assert.match(list.sql,/store_balance::float8 AS "storeBalance"/);
+  assert.ok(list.sql.indexOf('SUM(balance) OVER') < list.sql.indexOf('FROM scoped AS laska_receivables WHERE'));
   assert.deepEqual(list.params,['Мій агент',JSON.stringify(selected),'%Крамниця%',['overdue','penalty'],0]);
   calls.length=0;
   await repository.read({role:'supervisor',departments:[]},{statuses:[]});

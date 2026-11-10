@@ -10,6 +10,12 @@ representatives array means all accessible representatives. Legacy single-value
 The browser never reads the Drive export. `laska_receivables_sync` records the
 source version, report date, import time and control-total discrepancy.
 
+Each returned invoice includes `storeBalance`, the sum of all authorized invoice
+balances for that representative, department, route and store. A window aggregate
+calculates it before invoice search, status filters and LIMIT/OFFSET, so store
+headings retain the full balance on every page. Negative totals display as
+prepayment. This field follows the same mandatory agent/department access scope.
+
 ## Import
 
 The private SODA_LASKA_Дебіторка folder contains:
