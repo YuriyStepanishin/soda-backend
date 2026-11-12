@@ -448,32 +448,46 @@ export const getSalesReportRows = async (groupBy, query, includeVmd = false) => 
   });
 };
 
-// Daily reports do not need both dictionary joins on every scan.
+// Only daily reports use the operational date; source documents remain unchanged.
+const DAILY_DATE = `(CASE WHEN LOWER(BTRIM(COALESCE(a.department, ''))) = 'каса'
+  THEN s.sale_date ELSE s.sale_date - 1 END)`;
+
 const buildDailySource = (query, requiredColumns = '') => {
   const filter = buildLaskaWhere(query);
   const referenced = filter.where + requiredColumns;
   const columns = {
-    'Дата': 's.sale_date', 'ТА': 's.ta', 'Код ТТ': 's.store_code',
+    'Дата': DAILY_DATE, 'ТА': 's.ta', 'Код ТТ': 's.store_code',
     'ТТ': 's.store_name', 'Наименование товара': 's.product_name',
     'Вес': 's.weight', 'Відділ': 'a.department', 'Маршрут': 'a.route',
     'Виробник': 'p.manufacturer', 'ТМ': 'p.tm', 'Група': 'p.group_name', 'Підгрупа': 'p.subgroup',
   };
   const translate = (sql) => sql.replace(/"([^"\n]+)"/g, (match, column) => columns[column] || match);
   let table = 'public.sales s';
-  if (/"(?:Відділ|Маршрут)"/.test(referenced)) {
-    table += ' LEFT JOIN public.agents a ON TRIM(s.ta) = TRIM(a.ta)';
-  }
+  // The agent dictionary defines the Cash department, even without a UI filter.
+  table += ' LEFT JOIN public.agents a ON TRIM(s.ta) = TRIM(a.ta)';
   if (/"(?:Виробник|ТМ|Група|Підгрупа)"/.test(referenced)) {
     table += ' LEFT JOIN public.products p ON TRIM(s.product_name) = TRIM(p.product_name)';
   }
-  return { table, where: translate(filter.where), params: filter.params, column: translate(requiredColumns) };
+  // Coarse source-date bounds preserve the sale_date index scan. The translated
+  // predicates below apply the exact operational date, including Cash exceptions.
+  const bounds = [];
+  if (query.dateFrom) {
+    filter.params.push(query.dateFrom);
+    bounds.push(`s.sale_date >= $${filter.params.length}::date`);
+  }
+  if (query.dateTo) {
+    filter.params.push(query.dateTo);
+    bounds.push(`s.sale_date <= $${filter.params.length}::date + 1`);
+  }
+  const conditions = [translate(filter.where).replace(/^WHERE\s+/, ''), ...bounds].filter(Boolean);
+  return { table, where: conditions.length ? `WHERE ${conditions.join(' AND ')}` : '', params: filter.params, column: translate(requiredColumns) };
 };
 
 export const getSalesByDays = async (query) => {
   const filter = buildDailySource(query);
   const result = await laskaPool.query(buildDailySalesQuery({
     table: filter.table,
-    date: 's.sale_date',
+    date: DAILY_DATE,
     store: `COALESCE('code:' || NULLIF(TRIM(s.store_code), ''), 'name:' || COALESCE(NULLIF(TRIM(s.store_name), ''), 'Без ТТ'))`,
     amount: 's.amount',
     weight: 'COALESCE(s.quantity, 0) * COALESCE(s.weight, 0)',

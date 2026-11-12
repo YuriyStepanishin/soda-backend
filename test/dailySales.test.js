@@ -43,7 +43,7 @@ test('reject impossible dates, arrays and reversed ranges', () => {
   for (const range of [{ dateFrom: '2026-02-30' }, { dateTo: '2026-13-01' }, { dateFrom: ['2026-10-01'] }, { dateFrom: '2026-10-31', dateTo: '2026-10-01' }]) assert.ok(validateDailyDateRange(range));
   assert.equal(validateDailyDateRange({ dateFrom: '2024-02-29', dateTo: '2026-10-31' }), null);
 });
-test('one aggregate query to the selected pool; no unused dictionary joins', async () => {
+test('one aggregate query to the selected pool; LASKA uses agent departments for operational dates', async () => {
   calls.length = 0;
   await laskaDays({ dateFrom: '2026-10-01', dateTo: '2026-10-31' });
   await olgaDays({ where: 'WHERE sale_date >= $1::date', params: ['2026-10-01'] });
@@ -53,7 +53,10 @@ test('one aggregate query to the selected pool; no unused dictionary joins', asy
     assert.match(sql, /COUNT\(\*\)::int AS "storesCount"/);
     assert.doesNotMatch(sql, /daily_weight|REPLACE/);
   }
-  assert.doesNotMatch(calls[0].sql, /JOIN/);
+  assert.match(calls[0].sql, /LEFT JOIN public.agents a/);
+  assert.doesNotMatch(calls[0].sql, /JOIN public.products/);
+  assert.match(calls[0].sql, /THEN s\.sale_date ELSE s\.sale_date - 1 END/);
+  assert.doesNotMatch(calls[1].sql, /CASE WHEN|sale_date - 1/);
 });
 test('only three daily filter dictionaries; supervisor scope survives removing UI selections', async () => {
   calls.length = 0;
@@ -82,4 +85,23 @@ test('unfiltered admin dictionaries use one aggregate scan instead of eight quer
   assert.equal(calls.length, 1);
   assert.match(calls[0].sql, /array_agg\(DISTINCT/);
   assert.deepEqual(Object.keys(result), ['departments', 'agents', 'stores', 'brands', 'groups', 'subgroups', 'packings', 'products']);
+});
+
+// The same operational date must control grouping, date ranges and dictionaries.
+test('daily date filters include next-day documents and retain cash documents on their own date', async () => {
+  calls.length = 0;
+  await laskaDays({ dateFrom: '2026-12-31', dateTo: '2026-12-31', department: 'Каса' });
+  const { sql, params } = calls[0];
+  assert.match(sql, /END\) >= \$1/);
+  assert.match(sql, /END\) <= \$2/);
+  assert.match(sql, /a\.department = \$3/);
+  assert.match(sql, /s\.sale_date >= \$4::date/);
+  assert.match(sql, /s\.sale_date <= \$5::date \+ 1/);
+  assert.deepEqual(params, ['2026-12-31', '2026-12-31', 'Каса', '2026-12-31', '2026-12-31']);
+  calls.length = 0;
+  await laskaFilters({ query: { dateFrom: '2026-12-31', dateTo: '2026-12-31' }, user: { role: 'admin' } });
+  for (const { sql } of calls) {
+    assert.match(sql, /THEN s\.sale_date ELSE s\.sale_date - 1 END\) >= \$1/);
+    assert.match(sql, /END\) <= \$2/);
+  }
 });
