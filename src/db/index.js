@@ -34,9 +34,15 @@ const buildConnectionString = (rawConnectionString, envName) => {
 };
 
 const createPool = (connectionString, envName) => {
-  return new Pool({
+  const pool = new Pool({
     connectionString: buildConnectionString(connectionString, envName),
   });
+
+  pool.on('error', (error) => {
+    console.error(`[${envName}] Database pool error: ${error.message}`);
+  });
+
+  return pool;
 };
 
 export const pools = Object.fromEntries(
