@@ -234,6 +234,15 @@ export const importLaskaSales = async (input) => {
       client,
     });
 
+    // Record a durable revision in the same transaction as the imported sales.
+    await client.query(`CREATE TABLE IF NOT EXISTS public.soda_data_revision (
+      id integer PRIMARY KEY CHECK (id = 1),
+      revision bigint NOT NULL DEFAULT 0,
+      updated_at timestamptz NOT NULL DEFAULT now()
+    )`);
+    await client.query(`INSERT INTO public.soda_data_revision (id, revision, updated_at)
+      VALUES (1, 1, now()) ON CONFLICT (id) DO UPDATE
+      SET revision = public.soda_data_revision.revision + 1, updated_at = now()`);
     await client.query('COMMIT');
     salesResponseCache.invalidate('laska');
     return {
