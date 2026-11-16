@@ -88,7 +88,9 @@ export const getEffectiveQuery = (req) => {
 };
 
 export const buildLaskaWhere = (query = {}) => {
-  const conditions = [];
+  // Exclude the technical «ІНШЕ» group from all LASKA sales analytics.
+  // Preserve raw sales in Neon; this filter only affects reporting queries.
+  const conditions = [`UPPER(TRIM(COALESCE("Група", ''))) <> 'ІНШЕ'`];
   const params = [];
 
   const add = (condition, value) => {
