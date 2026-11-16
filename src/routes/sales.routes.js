@@ -5,6 +5,7 @@ import { authenticate } from '../middleware/authenticate.js';
 import { validateSalesTenantHeader, resolveSalesTenant } from '../middleware/tenant.js';
 import { isValidId } from '../middleware/isValidId.js';
 import { dispatchSalesOperation } from '../modules/sales/sales.controller.js';
+import { getSalesComparison } from '../modules/sales/salesComparison.controller.js';
 
 const router = Router();
 const withSalesTenant = [validateSalesTenantHeader, authenticate, resolveSalesTenant()];
@@ -42,6 +43,7 @@ router.get(
   ...withSalesTenant,
   dispatchSalesOperation('drilldown'),
 );
+router.get('/compare', ...withSalesTenant, salesResponseCache.middleware, getSalesComparison);
 router.get('/report', ...withSalesTenant, salesResponseCache.middleware, dispatchSalesOperation('report'));
 router.get('/stores', ...withSalesTenant, dispatchSalesOperation('stores'));
 router.get('/products', ...withSalesTenant, dispatchSalesOperation('products'));
