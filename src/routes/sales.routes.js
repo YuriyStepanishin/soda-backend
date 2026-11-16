@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { getPool } from '../db/index.js';
 import { salesResponseCache } from '../middleware/salesResponseCache.js';
 import { authenticate } from '../middleware/authenticate.js';
 import { validateSalesTenantHeader, resolveSalesTenant } from '../middleware/tenant.js';
@@ -7,6 +8,24 @@ import { dispatchSalesOperation } from '../modules/sales/sales.controller.js';
 
 const router = Router();
 const withSalesTenant = [validateSalesTenantHeader, authenticate, resolveSalesTenant()];
+
+// Persistent revision changes only after a successful sales import commit.
+router.get('/revision', ...withSalesTenant, async (req, res, next) => {
+  try {
+    const result = await getPool(req.salesTenant).query(
+      "SELECT to_regclass('public.soda_data_revision') AS table_name"
+    );
+    let revision = 0;
+    if (result.rows[0]?.table_name) {
+      const current = await getPool(req.salesTenant).query(
+        "SELECT revision FROM public.soda_data_revision WHERE id = 1"
+      );
+      revision = Number(current.rows[0]?.revision ?? 0);
+    }
+    res.set('Cache-Control', 'private, no-store');
+    res.json({ success: true, revision });
+  } catch (error) { next(error); }
+});
 
 router.get('/summary', ...withSalesTenant, dispatchSalesOperation('summary'));
 router.get('/by-days/filters', ...withSalesTenant, dispatchSalesOperation('byDaysFilters'));
