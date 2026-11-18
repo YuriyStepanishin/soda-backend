@@ -66,13 +66,17 @@ router.post('/:kind', handle(async (req, res) => {
   }
   const keys = Object.keys(values);
   const extra = c.table === 'sales_routes' ? ', match_status' : '';
-  const extraValue = c.table === 'sales_routes' ? ", 'pending'" : '';
+  const extraValue = c.table === 'sales_routes' ? (values.store_code ? ", 'confirmed'" : ", 'pending'") : '';
   const result = await pool.query('INSERT INTO ' + c.table + ' (' + keys.join(',') + extra + ') VALUES (' + keys.map((_, i) => '$' + (i + 1)).join(',') + extraValue + ') RETURNING *', keys.map(k => values[k]));
   res.status(201).json(result.rows[0]);
 }));
 router.put('/:kind/:id', handle(async (req, res) => {
   const c = config(req, res); if (!c) return;
   const values = validate(c, req.body);
+  if (c.table === 'sales_routes' && values.store_code) {
+    const match = await pool.query('SELECT 1 FROM sales WHERE store_code = $1 LIMIT 1', [values.store_code]);
+    if (!match.rowCount) return res.status(400).json({ message: 'Код ТТ відсутній у базі продажів.' });
+  }
   const keys = Object.keys(values);
   const extra = c.table === 'sales_routes' ? ", match_status = '" + (values.store_code ? 'confirmed' : 'pending') + "', updated_at = now()" : '';
   const result = await pool.query('UPDATE ' + c.table + ' SET ' + keys.map((k, i) => k + ' = $' + (i + 1)).join(', ') + extra + ' WHERE id = $' + (keys.length + 1) + ' RETURNING *', [...keys.map(k => values[k]), req.params.id]);
