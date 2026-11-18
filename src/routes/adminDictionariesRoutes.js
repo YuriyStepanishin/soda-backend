@@ -60,6 +60,10 @@ router.get('/:kind', handle(async (req, res) => {
 router.post('/:kind', handle(async (req, res) => {
   const c = config(req, res); if (!c) return;
   const values = validate(c, req.body);
+  if (c.table === 'sales_routes' && values.store_code) {
+    const match = await pool.query('SELECT 1 FROM sales WHERE store_code = $1 LIMIT 1', [values.store_code]);
+    if (!match.rowCount) return res.status(400).json({ message: 'Код ТТ відсутній у базі продажів.' });
+  }
   const keys = Object.keys(values);
   const extra = c.table === 'sales_routes' ? ', match_status' : '';
   const extraValue = c.table === 'sales_routes' ? ", 'pending'" : '';
