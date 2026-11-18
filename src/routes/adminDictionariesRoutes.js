@@ -50,7 +50,7 @@ const handle = (fn) => async (req, res) => {
 router.get('/:kind', handle(async (req, res) => {
   const c = config(req, res); if (!c) return;
   const q = String(req.query.q || '').slice(0, 120);
-  const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+  const page = Math.min(100000, Math.max(1, Number.parseInt(req.query.page, 10) || 1));
   const filter = q ? ' WHERE ' + (c.table === 'products' ? "product_name ILIKE $1" : "store_name ILIKE $1 OR agent_name ILIKE $1") : '';
   const params = q ? ['%' + q + '%'] : [];
   const count = await pool.query('SELECT count(*)::int AS total FROM ' + c.table + filter, params);
@@ -74,7 +74,7 @@ router.put('/:kind/:id', handle(async (req, res) => {
   const c = config(req, res); if (!c) return;
   const values = validate(c, req.body);
   const keys = Object.keys(values);
-  const extra = c.table === 'sales_routes' ? ", match_status = 'pending', updated_at = now()" : '';
+  const extra = c.table === 'sales_routes' ? ", match_status = '" + (values.store_code ? 'confirmed' : 'pending') + "', updated_at = now()" : '';
   const result = await pool.query('UPDATE ' + c.table + ' SET ' + keys.map((k, i) => k + ' = $' + (i + 1)).join(', ') + extra + ' WHERE id = $' + (keys.length + 1) + ' RETURNING *', [...keys.map(k => values[k]), req.params.id]);
   if (!result.rowCount) return res.status(404).json({ message: 'Запис не знайдено.' });
   res.json(result.rows[0]);
