@@ -10,6 +10,7 @@ export const receivablesFilters = z.object({
   representatives: jsonParameter(z.array(z.object({agent: z.string().max(200).nullable(), route: z.string().max(200)}).strict()).max(100)).optional(),
   statuses: jsonParameter(z.array(status).max(4)).optional(),
   search: z.string().max(200).optional(), status: status.optional(),
+  minDays: z.coerce.number().int().min(0).max(100000).optional(),
   page: z.coerce.number().int().min(1).max(100000).optional(),
 }).strict();
 
