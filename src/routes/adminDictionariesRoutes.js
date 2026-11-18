@@ -47,12 +47,36 @@ const handle = (fn) => async (req, res) => {
     res.status(500).json({ message: 'Помилка роботи з довідником.' });
   }
 };
+router.get('/:kind/filters', handle(async (req, res) => {
+  const c = config(req, res); if (!c) return;
+  const allowed = c.fields.filter(f => f !== 'product_name' && f !== 'store_name' && f !== 'stop_order' && f !== 'store_code');
+  const options = {};
+  for (const field of allowed) {
+    const result = await pool.query('SELECT DISTINCT ' + field + ' AS value FROM ' + c.table + ' WHERE ' + field + ' IS NOT NULL AND trim(' + field + ") <> '' ORDER BY value LIMIT 1000");
+    options[field] = result.rows.map(row => row.value);
+  }
+  res.json(options);
+}));
 router.get('/:kind', handle(async (req, res) => {
   const c = config(req, res); if (!c) return;
-  const q = String(req.query.q || '').slice(0, 120);
+  const q = String(req.query.q || '').trim().slice(0, 120);
   const page = Math.min(100000, Math.max(1, Number.parseInt(req.query.page, 10) || 1));
-  const filter = q ? ' WHERE ' + (c.table === 'products' ? "product_name ILIKE $1" : "store_name ILIKE $1 OR agent_name ILIKE $1") : '';
-  const params = q ? ['%' + q + '%'] : [];
+  const params = [];
+  const conditions = [];
+  if (q) {
+    params.push('%' + q + '%');
+    conditions.push(c.table === 'products'
+      ? '(product_name ILIKE $' + params.length + ')'
+      : '(store_name ILIKE $' + params.length + ' OR agent_name ILIKE $' + params.length + ' OR store_code ILIKE $' + params.length + ')');
+  }
+  for (const field of c.fields) {
+    if (field === 'product_name' || field === 'store_name' || field === 'stop_order') continue;
+    const value = String(req.query[field] || '').trim().slice(0, 200);
+    if (!value) continue;
+    params.push(value);
+    conditions.push(field + ' = $' + params.length);
+  }
+  const filter = conditions.length ? ' WHERE ' + conditions.join(' AND ') : '';
   const count = await pool.query('SELECT count(*)::int AS total FROM ' + c.table + filter, params);
   const result = await pool.query('SELECT * FROM ' + c.table + filter + ' ORDER BY id DESC LIMIT 50 OFFSET $' + (params.length + 1), [...params, (page - 1) * 50]);
   res.json({ rows: result.rows, total: count.rows[0].total, page });
