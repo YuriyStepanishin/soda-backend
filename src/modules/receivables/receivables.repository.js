@@ -59,6 +59,7 @@ export function createReceivablesRepository(pool) {
         conditions.push(representativeCondition(params.length));
       }
       if (query.search) add("(store_name ILIKE ? OR document_number ILIKE ?)", `%${query.search}%`);
+      if (query.minDays !== undefined) add('shipped_days > ?', query.minDays);
       const where = conditions.join(' AND ');
       const status = `CASE WHEN balance<0 THEN 'prepayment' WHEN balance>0 AND NOT is_network AND shipped_days>=21 THEN 'penalty'
         WHEN balance>0 AND NOT is_network AND shipped_days>=14 THEN 'overdue' ELSE 'current' END`;
