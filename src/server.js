@@ -22,6 +22,7 @@ import priceRoutes from './routes/olgatorgPriceRoutes.js';
 import importRoutes from './routes/olgatorgImportRoutes.js';
 import uploadPhotosRoutes from './routes/uploadPhotos.js';
 import laskaDictionaryRoutes from './routes/laskaDictionaryRoutes.js';
+import adminDictionariesRoutes from './routes/adminDictionariesRoutes.js';
 import laskaUploadRoutes from './routes/laskaUploadRoutes.js';
 import laskaImportRoutes from './routes/laskaImportRoutes.js';
 
@@ -57,6 +58,7 @@ app.use('/api/google-drive', googleDriveRoutes);
 app.use('/api/prices', priceRoutes);
 app.use('/api/imports', importRoutes);
 app.use('/api/laska/dictionary', laskaDictionaryRoutes);
+app.use('/api/admin/dictionaries', adminDictionariesRoutes);
 app.use('/api/laska/upload', laskaUploadRoutes);
 app.use('/api/laska/imports', laskaImportRoutes);
 
