@@ -78,8 +78,8 @@ router.get('/:kind', handle(async (req, res) => {
     if (!value) continue;
     params.push(value);
     conditions.push(c.table === 'sales_routes' && field === 'route_day'
-      ? "(',' || regexp_replace(" + field + ", '\\s+', '', 'g') || ',') LIKE '%,' || $" + params.length + " || ',%'"
-      : field + ' = 
+      ? "POSITION(',' || $" + params.length + " || ',' IN ',' || replace(" + field + ", ' ', '') || ',') > 0"
+      : field + ' = $' + params.length);
   }
   const filter = conditions.length ? ' WHERE ' + conditions.join(' AND ') : '';
   const count = await pool.query('SELECT count(*)::int AS total FROM ' + c.table + filter, params);
