@@ -96,8 +96,8 @@ router.post('/:kind', handle(async (req, res) => {
   const keys = Object.keys(values);
   const extra = c.table === 'sales_routes' ? ', match_status' : '';
   const extraValue = c.table === 'sales_routes' ? (values.store_code ? ", 'confirmed'" : ", 'pending'") : '';
-  const routeExtra = c.table === 'sales_routes' ? 'id, source_file, ' : '';
-  const routeValues = c.table === 'sales_routes' ? "(SELECT COALESCE(MAX(id), 0) + 1 FROM sales_routes), 'SODA_ADMIN', " : '';
+  const routeExtra = c.table === 'sales_routes' ? 'source_file, ' : '';
+  const routeValues = c.table === 'sales_routes' ? "'SODA_ADMIN', " : '';
   const result = await pool.query('INSERT INTO ' + c.table + ' (' + routeExtra + keys.join(',') + extra + ') VALUES (' + routeValues + keys.map((_, i) => '
   res.status(201).json(result.rows[0]);
 }));
