@@ -13,7 +13,7 @@ router.use((req, res, next) => {
 const pool = getPool('laska');
 const tables = {
   products: { table: 'products', fields: ['product_name', 'manufacturer', 'tm', 'group_name', 'subgroup', 'packaging'], required: ['product_name'] },
-  routes: { table: 'sales_routes', fields: ['agent_name', 'route_day', 'stop_order', 'store_code', 'store_name'], required: ['agent_name', 'route_day', 'stop_order', 'store_name'] },
+  routes: { table: 'sales_routes', fields: ['agent_name', 'route_day', 'stop_order', 'store_code', 'store_name'], required: ['agent_name', 'stop_order', 'store_name'] },
 };
 const config = (req, res) => {
   const c = tables[req.params.kind];
@@ -36,7 +36,10 @@ const validate = (c, body) => {
   }
   for (const key of c.required) if (!result[key]) throw new Error('Заповніть поле ' + key);
   if (c.table === 'sales_routes') {
-    if (!['ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ', 'НД'].includes(result.route_day)) throw new Error('Невірний день тижня');
+    const days = ['ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ', 'НД'];
+    const parts = String(result.route_day ?? '').split(',').map(x => x.trim()).filter(Boolean);
+    if (parts.some(x => !days.includes(x))) throw new Error('Невірний день тижня');
+    result.route_day = days.filter(day => parts.includes(day)).join(', ');
   }
   return result;
 };
@@ -55,6 +58,7 @@ router.get('/:kind/filters', handle(async (req, res) => {
     const result = await pool.query('SELECT DISTINCT ' + field + ' AS value FROM ' + c.table + ' WHERE ' + field + ' IS NOT NULL AND trim(' + field + ") <> '' ORDER BY value LIMIT 1000");
     options[field] = result.rows.map(row => row.value);
   }
+  if (c.table === 'sales_routes') options.route_day = ['ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ', 'НД'];
   res.json(options);
 }));
 router.get('/:kind', handle(async (req, res) => {
@@ -74,7 +78,114 @@ router.get('/:kind', handle(async (req, res) => {
     const value = String(req.query[field] || '').trim().slice(0, 200);
     if (!value) continue;
     params.push(value);
-    conditions.push(field + ' = $' + params.length);
+    conditions.push(c.table === 'sales_routes' && field === 'route_day'
+      ? "POSITION(',' || $" + params.length + " || ',' IN ',' || replace(" + field + ", ' ', '') || ',') > 0"
+      : field + ' = $' + params.length);
+  }
+  const filter = conditions.length ? ' WHERE ' + conditions.join(' AND ') : '';
+  const count = await pool.query('SELECT count(*)::int AS total FROM ' + c.table + filter, params);
+  const result = await pool.query('SELECT * FROM ' + c.table + filter + ' ORDER BY id DESC LIMIT 50 OFFSET $' + (params.length + 1), [...params, (page - 1) * 50]);
+  res.json({ rows: result.rows, total: count.rows[0].total, page });
+}));
+router.post('/:kind', handle(async (req, res) => {
+  const c = config(req, res); if (!c) return;
+  const values = validate(c, req.body);
+  if (c.table === 'sales_routes' && values.store_code) {
+    const match = await pool.query('SELECT 1 FROM sales WHERE store_code = $1 LIMIT 1', [values.store_code]);
+    if (!match.rowCount) return res.status(400).json({ message: 'Код ТТ відсутній у базі продажів.' });
+  }
+  const keys = Object.keys(values);
+  const extra = c.table === 'sales_routes' ? ', match_status' : '';
+  const extraValue = c.table === 'sales_routes' ? (values.store_code && values.route_day ? ", 'confirmed'" : ", 'pending'") : '';
+  const routeExtra = c.table === 'sales_routes' ? 'source_file, ' : '';
+  const routeValues = c.table === 'sales_routes' ? "'SODA_ADMIN', " : '';
+  const result = await pool.query('INSERT INTO ' + c.table + ' (' + routeExtra + keys.join(',') + extra + ') VALUES (' + routeValues + keys.map((_, i) => '
+  res.status(201).json(result.rows[0]);
+}));
+router.put('/:kind/:id', handle(async (req, res) => {
+  const c = config(req, res); if (!c) return;
+  const values = validate(c, req.body);
+  if (c.table === 'sales_routes' && values.store_code) {
+    const match = await pool.query('SELECT 1 FROM sales WHERE store_code = $1 LIMIT 1', [values.store_code]);
+    if (!match.rowCount) return res.status(400).json({ message: 'Код ТТ відсутній у базі продажів.' });
+  }
+  const keys = Object.keys(values);
+  const extra = c.table === 'sales_routes' ? ", match_status = '" + (values.store_code && values.route_day ? 'confirmed' : 'pending') + "', updated_at = now()" : '';
+  const result = await pool.query('UPDATE ' + c.table + ' SET ' + keys.map((k, i) => k + ' = $' + (i + 1)).join(', ') + extra + ' WHERE id = $' + (keys.length + 1) + ' RETURNING *', [...keys.map(k => values[k]), req.params.id]);
+  if (!result.rowCount) return res.status(404).json({ message: 'Запис не знайдено.' });
+  res.json(result.rows[0]);
+}));
+router.delete('/:kind/:id', handle(async (req, res) => {
+  const c = config(req, res); if (!c) return;
+  const result = await pool.query('DELETE FROM ' + c.table + ' WHERE id = $1 RETURNING id', [req.params.id]);
+  if (!result.rowCount) return res.status(404).json({ message: 'Запис не знайдено.' });
+  res.json({ success: true });
+}));
+export default router;
+ + params.length);
+  }
+  const filter = conditions.length ? ' WHERE ' + conditions.join(' AND ') : '';
+  const count = await pool.query('SELECT count(*)::int AS total FROM ' + c.table + filter, params);
+  const result = await pool.query('SELECT * FROM ' + c.table + filter + ' ORDER BY id DESC LIMIT 50 OFFSET $' + (params.length + 1), [...params, (page - 1) * 50]);
+  res.json({ rows: result.rows, total: count.rows[0].total, page });
+}));
+router.post('/:kind', handle(async (req, res) => {
+  const c = config(req, res); if (!c) return;
+  const values = validate(c, req.body);
+  if (c.table === 'sales_routes' && values.store_code) {
+    const match = await pool.query('SELECT 1 FROM sales WHERE store_code = $1 LIMIT 1', [values.store_code]);
+    if (!match.rowCount) return res.status(400).json({ message: 'Код ТТ відсутній у базі продажів.' });
+  }
+  const keys = Object.keys(values);
+  const extra = c.table === 'sales_routes' ? ', match_status' : '';
+  const extraValue = c.table === 'sales_routes' ? (values.store_code ? ", 'confirmed'" : ", 'pending'") : '';
+  const result = await pool.query('INSERT INTO ' + c.table + ' (' + keys.join(',') + extra + ') VALUES (' + keys.map((_, i) => '$' + (i + 1)).join(',') + extraValue + ') RETURNING *', keys.map(k => values[k]));
+  res.status(201).json(result.rows[0]);
+}));
+router.put('/:kind/:id', handle(async (req, res) => {
+  const c = config(req, res); if (!c) return;
+  const values = validate(c, req.body);
+  if (c.table === 'sales_routes' && values.store_code) {
+    const match = await pool.query('SELECT 1 FROM sales WHERE store_code = $1 LIMIT 1', [values.store_code]);
+    if (!match.rowCount) return res.status(400).json({ message: 'Код ТТ відсутній у базі продажів.' });
+  }
+  const keys = Object.keys(values);
+  const extra = c.table === 'sales_routes' ? ", match_status = '" + (values.store_code ? 'confirmed' : 'pending') + "', updated_at = now()" : '';
+  const result = await pool.query('UPDATE ' + c.table + ' SET ' + keys.map((k, i) => k + ' = $' + (i + 1)).join(', ') + extra + ' WHERE id = $' + (keys.length + 1) + ' RETURNING *', [...keys.map(k => values[k]), req.params.id]);
+  if (!result.rowCount) return res.status(404).json({ message: 'Запис не знайдено.' });
+  res.json(result.rows[0]);
+}));
+router.delete('/:kind/:id', handle(async (req, res) => {
+  const c = config(req, res); if (!c) return;
+  const result = await pool.query('DELETE FROM ' + c.table + ' WHERE id = $1 RETURNING id', [req.params.id]);
+  if (!result.rowCount) return res.status(404).json({ message: 'Запис не знайдено.' });
+  res.json({ success: true });
+}));
+export default router;
+ + (i + 1)).join(',') + extraValue + ') RETURNING *', keys.map(k => values[k]));
+  res.status(201).json(result.rows[0]);
+}));
+router.put('/:kind/:id', handle(async (req, res) => {
+  const c = config(req, res); if (!c) return;
+  const values = validate(c, req.body);
+  if (c.table === 'sales_routes' && values.store_code) {
+    const match = await pool.query('SELECT 1 FROM sales WHERE store_code = $1 LIMIT 1', [values.store_code]);
+    if (!match.rowCount) return res.status(400).json({ message: 'Код ТТ відсутній у базі продажів.' });
+  }
+  const keys = Object.keys(values);
+  const extra = c.table === 'sales_routes' ? ", match_status = '" + (values.store_code ? 'confirmed' : 'pending') + "', updated_at = now()" : '';
+  const result = await pool.query('UPDATE ' + c.table + ' SET ' + keys.map((k, i) => k + ' = $' + (i + 1)).join(', ') + extra + ' WHERE id = $' + (keys.length + 1) + ' RETURNING *', [...keys.map(k => values[k]), req.params.id]);
+  if (!result.rowCount) return res.status(404).json({ message: 'Запис не знайдено.' });
+  res.json(result.rows[0]);
+}));
+router.delete('/:kind/:id', handle(async (req, res) => {
+  const c = config(req, res); if (!c) return;
+  const result = await pool.query('DELETE FROM ' + c.table + ' WHERE id = $1 RETURNING id', [req.params.id]);
+  if (!result.rowCount) return res.status(404).json({ message: 'Запис не знайдено.' });
+  res.json({ success: true });
+}));
+export default router;
+ + params.length);
   }
   const filter = conditions.length ? ' WHERE ' + conditions.join(' AND ') : '';
   const count = await pool.query('SELECT count(*)::int AS total FROM ' + c.table + filter, params);
