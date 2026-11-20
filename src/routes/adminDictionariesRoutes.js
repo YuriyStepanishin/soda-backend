@@ -99,7 +99,12 @@ router.post('/:kind', handle(async (req, res) => {
   const extraValue = c.table === 'sales_routes' ? (values.store_code && values.route_day ? ", 'confirmed'" : ", 'pending'") : '';
   const routeExtra = c.table === 'sales_routes' ? 'source_file, ' : '';
   const routeValues = c.table === 'sales_routes' ? "'SODA_ADMIN', " : '';
-  const result = await pool.query('INSERT INTO ' + c.table + ' (' + routeExtra + keys.join(',') + extra + ') VALUES (' + routeValues + keys.map((_, i) => '
+  const placeholders = keys.map((_, i) => '$' + (i + 1)).join(',');
+  const result = await pool.query(
+    `INSERT INTO ${c.table} (${routeExtra}${keys.join(',')}${extra})
+     VALUES (${routeValues}${placeholders}${extraValue}) RETURNING *`,
+    keys.map(key => values[key]),
+  );
   res.status(201).json(result.rows[0]);
 }));
 router.put('/:kind/:id', handle(async (req, res) => {
@@ -111,109 +116,6 @@ router.put('/:kind/:id', handle(async (req, res) => {
   }
   const keys = Object.keys(values);
   const extra = c.table === 'sales_routes' ? ", match_status = '" + (values.store_code && values.route_day ? 'confirmed' : 'pending') + "', updated_at = now()" : '';
-  const result = await pool.query('UPDATE ' + c.table + ' SET ' + keys.map((k, i) => k + ' = $' + (i + 1)).join(', ') + extra + ' WHERE id = $' + (keys.length + 1) + ' RETURNING *', [...keys.map(k => values[k]), req.params.id]);
-  if (!result.rowCount) return res.status(404).json({ message: 'Запис не знайдено.' });
-  res.json(result.rows[0]);
-}));
-router.delete('/:kind/:id', handle(async (req, res) => {
-  const c = config(req, res); if (!c) return;
-  const result = await pool.query('DELETE FROM ' + c.table + ' WHERE id = $1 RETURNING id', [req.params.id]);
-  if (!result.rowCount) return res.status(404).json({ message: 'Запис не знайдено.' });
-  res.json({ success: true });
-}));
-export default router;
- + params.length);
-  }
-  const filter = conditions.length ? ' WHERE ' + conditions.join(' AND ') : '';
-  const count = await pool.query('SELECT count(*)::int AS total FROM ' + c.table + filter, params);
-  const result = await pool.query('SELECT * FROM ' + c.table + filter + ' ORDER BY id DESC LIMIT 50 OFFSET $' + (params.length + 1), [...params, (page - 1) * 50]);
-  res.json({ rows: result.rows, total: count.rows[0].total, page });
-}));
-router.post('/:kind', handle(async (req, res) => {
-  const c = config(req, res); if (!c) return;
-  const values = validate(c, req.body);
-  if (c.table === 'sales_routes' && values.store_code) {
-    const match = await pool.query('SELECT 1 FROM sales WHERE store_code = $1 LIMIT 1', [values.store_code]);
-    if (!match.rowCount) return res.status(400).json({ message: 'Код ТТ відсутній у базі продажів.' });
-  }
-  const keys = Object.keys(values);
-  const extra = c.table === 'sales_routes' ? ', match_status' : '';
-  const extraValue = c.table === 'sales_routes' ? (values.store_code ? ", 'confirmed'" : ", 'pending'") : '';
-  const result = await pool.query('INSERT INTO ' + c.table + ' (' + keys.join(',') + extra + ') VALUES (' + keys.map((_, i) => '$' + (i + 1)).join(',') + extraValue + ') RETURNING *', keys.map(k => values[k]));
-  res.status(201).json(result.rows[0]);
-}));
-router.put('/:kind/:id', handle(async (req, res) => {
-  const c = config(req, res); if (!c) return;
-  const values = validate(c, req.body);
-  if (c.table === 'sales_routes' && values.store_code) {
-    const match = await pool.query('SELECT 1 FROM sales WHERE store_code = $1 LIMIT 1', [values.store_code]);
-    if (!match.rowCount) return res.status(400).json({ message: 'Код ТТ відсутній у базі продажів.' });
-  }
-  const keys = Object.keys(values);
-  const extra = c.table === 'sales_routes' ? ", match_status = '" + (values.store_code ? 'confirmed' : 'pending') + "', updated_at = now()" : '';
-  const result = await pool.query('UPDATE ' + c.table + ' SET ' + keys.map((k, i) => k + ' = $' + (i + 1)).join(', ') + extra + ' WHERE id = $' + (keys.length + 1) + ' RETURNING *', [...keys.map(k => values[k]), req.params.id]);
-  if (!result.rowCount) return res.status(404).json({ message: 'Запис не знайдено.' });
-  res.json(result.rows[0]);
-}));
-router.delete('/:kind/:id', handle(async (req, res) => {
-  const c = config(req, res); if (!c) return;
-  const result = await pool.query('DELETE FROM ' + c.table + ' WHERE id = $1 RETURNING id', [req.params.id]);
-  if (!result.rowCount) return res.status(404).json({ message: 'Запис не знайдено.' });
-  res.json({ success: true });
-}));
-export default router;
- + (i + 1)).join(',') + extraValue + ') RETURNING *', keys.map(k => values[k]));
-  res.status(201).json(result.rows[0]);
-}));
-router.put('/:kind/:id', handle(async (req, res) => {
-  const c = config(req, res); if (!c) return;
-  const values = validate(c, req.body);
-  if (c.table === 'sales_routes' && values.store_code) {
-    const match = await pool.query('SELECT 1 FROM sales WHERE store_code = $1 LIMIT 1', [values.store_code]);
-    if (!match.rowCount) return res.status(400).json({ message: 'Код ТТ відсутній у базі продажів.' });
-  }
-  const keys = Object.keys(values);
-  const extra = c.table === 'sales_routes' ? ", match_status = '" + (values.store_code ? 'confirmed' : 'pending') + "', updated_at = now()" : '';
-  const result = await pool.query('UPDATE ' + c.table + ' SET ' + keys.map((k, i) => k + ' = $' + (i + 1)).join(', ') + extra + ' WHERE id = $' + (keys.length + 1) + ' RETURNING *', [...keys.map(k => values[k]), req.params.id]);
-  if (!result.rowCount) return res.status(404).json({ message: 'Запис не знайдено.' });
-  res.json(result.rows[0]);
-}));
-router.delete('/:kind/:id', handle(async (req, res) => {
-  const c = config(req, res); if (!c) return;
-  const result = await pool.query('DELETE FROM ' + c.table + ' WHERE id = $1 RETURNING id', [req.params.id]);
-  if (!result.rowCount) return res.status(404).json({ message: 'Запис не знайдено.' });
-  res.json({ success: true });
-}));
-export default router;
- + params.length);
-  }
-  const filter = conditions.length ? ' WHERE ' + conditions.join(' AND ') : '';
-  const count = await pool.query('SELECT count(*)::int AS total FROM ' + c.table + filter, params);
-  const result = await pool.query('SELECT * FROM ' + c.table + filter + ' ORDER BY id DESC LIMIT 50 OFFSET $' + (params.length + 1), [...params, (page - 1) * 50]);
-  res.json({ rows: result.rows, total: count.rows[0].total, page });
-}));
-router.post('/:kind', handle(async (req, res) => {
-  const c = config(req, res); if (!c) return;
-  const values = validate(c, req.body);
-  if (c.table === 'sales_routes' && values.store_code) {
-    const match = await pool.query('SELECT 1 FROM sales WHERE store_code = $1 LIMIT 1', [values.store_code]);
-    if (!match.rowCount) return res.status(400).json({ message: 'Код ТТ відсутній у базі продажів.' });
-  }
-  const keys = Object.keys(values);
-  const extra = c.table === 'sales_routes' ? ', match_status' : '';
-  const extraValue = c.table === 'sales_routes' ? (values.store_code ? ", 'confirmed'" : ", 'pending'") : '';
-  const result = await pool.query('INSERT INTO ' + c.table + ' (' + keys.join(',') + extra + ') VALUES (' + keys.map((_, i) => '$' + (i + 1)).join(',') + extraValue + ') RETURNING *', keys.map(k => values[k]));
-  res.status(201).json(result.rows[0]);
-}));
-router.put('/:kind/:id', handle(async (req, res) => {
-  const c = config(req, res); if (!c) return;
-  const values = validate(c, req.body);
-  if (c.table === 'sales_routes' && values.store_code) {
-    const match = await pool.query('SELECT 1 FROM sales WHERE store_code = $1 LIMIT 1', [values.store_code]);
-    if (!match.rowCount) return res.status(400).json({ message: 'Код ТТ відсутній у базі продажів.' });
-  }
-  const keys = Object.keys(values);
-  const extra = c.table === 'sales_routes' ? ", match_status = '" + (values.store_code ? 'confirmed' : 'pending') + "', updated_at = now()" : '';
   const result = await pool.query('UPDATE ' + c.table + ' SET ' + keys.map((k, i) => k + ' = $' + (i + 1)).join(', ') + extra + ' WHERE id = $' + (keys.length + 1) + ' RETURNING *', [...keys.map(k => values[k]), req.params.id]);
   if (!result.rowCount) return res.status(404).json({ message: 'Запис не знайдено.' });
   res.json(result.rows[0]);
