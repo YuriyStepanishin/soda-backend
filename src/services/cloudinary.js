@@ -2,7 +2,7 @@ import cloudinary, {
   ensureCloudinaryConfigured,
 } from '../config/cloudinary.js';
 
-export const uploadToCloudinary = (file) => {
+export const uploadToCloudinary = (file, options = {}) => {
   ensureCloudinaryConfigured();
 
   return new Promise((resolve, reject) => {
@@ -11,6 +11,7 @@ export const uploadToCloudinary = (file) => {
         {
           folder: process.env.CLOUDINARY_FOLDER || 'soda-reports',
           resource_type: 'image',
+          ...options,
         },
         (error, result) => {
           if (error) {

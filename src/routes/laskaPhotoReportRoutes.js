@@ -1,0 +1,216 @@
+import { randomUUID } from 'node:crypto';
+import { Router } from 'express';
+import multer from 'multer';
+import { z } from 'zod';
+import cloudinary, { ensureCloudinaryConfigured } from '../config/cloudinary.js';
+import { getPool } from '../db/index.js';
+import { authenticate } from '../middleware/authenticate.js';
+import { resolveSalesTenant, validateSalesTenantHeader } from '../middleware/tenant.js';
+import { uploadToCloudinary } from '../services/cloudinary.js';
+
+const router = Router();
+const pool = getPool('laska');
+const pageSize = 12;
+const categories = z.enum(['merchandising', 'equipment', 'other']);
+const searchText = z.string().trim().max(200).default('');
+const calendarDate = z.iso.date().refine(value => !value.startsWith('0000-'));
+const reportFilters = z.object({
+  from: calendarDate.optional(),
+  to: calendarDate.optional(),
+  department: searchText,
+  agent: searchText,
+  search: searchText,
+  category: categories.optional(),
+  page: z.coerce.number().int().min(1).max(10000).default(1),
+}).refine(({ from, to }) => !from || !to || from <= to);
+const newReport = z.object({
+  id: z.uuid(),
+  routeId: z.string().refine(value =>
+    /^[1-9][0-9]{0,18}$/.test(value) && BigInt(value) <= 9223372036854775807n),
+  reportDate: calendarDate,
+  category: categories,
+  comment: z.string().trim().max(1000).default(''),
+});
+const mediaType = 'authenticated';
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { files: 3, fileSize: 5 * 1024 * 1024, fields: 5, fieldSize: 4096, parts: 9 },
+  fileFilter(_req, file, callback) {
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.mimetype)) {
+      return callback(new multer.MulterError('LIMIT_UNEXPECTED_FILE', 'photos'));
+    }
+    callback(null, true);
+  },
+}).array('photos', 3);
+
+const scopeParameters = ({ role, representative, department, departments }) => [
+  role,
+  representative || '',
+  departments?.length ? departments : department ? [department] : [],
+];
+const scope = (agent, department) => `
+  ($1 IN ('admin', 'manager')
+   OR ($1 = 'agent' AND $2 <> '' AND lower(btrim(${agent})) = lower(btrim($2)))
+   OR ($1 = 'supervisor' AND ${department} = ANY($3::text[])))`;
+const reportScope = scope('agent_name', 'department');
+const routesFrom = `
+  FROM public.sales_routes r
+  LEFT JOIN public.agents a ON lower(btrim(a.ta)) = lower(btrim(r.agent_name))
+  WHERE r.tenant_id = 'LASKA'
+    AND nullif(btrim(r.store_code), '') IS NOT NULL
+    AND nullif(btrim(r.agent_name), '') IS NOT NULL
+    AND nullif(btrim(r.store_name), '') IS NOT NULL
+    AND ${scope('r.agent_name', 'a.department')}`;
+
+router.use(validateSalesTenantHeader, authenticate, resolveSalesTenant(), (req, res, next) => {
+  if (req.salesTenant !== 'laska' || !['admin', 'manager', 'supervisor', 'agent'].includes(req.user.role)) {
+    return res.status(403).json({ message: 'Фотозвіт доступний користувачам ЛАСКА.' });
+  }
+  res.set('Cache-Control', 'no-store');
+  next();
+});
+
+router.get('/stores', async (req, res) => {
+  const search = searchText.safeParse(req.query.search);
+  if (!search.success) return res.status(400).json({ message: 'Некоректний пошук торгової точки.' });
+  const { rows } = await pool.query(
+    `SELECT id::text, store_code, store_name, agent_name, department
+     FROM (
+       SELECT DISTINCT ON (r.store_code, r.agent_name) r.id, r.store_code, r.store_name,
+              r.agent_name, COALESCE(a.department, '') AS department
+       ${routesFrom}
+         AND strpos(lower(concat_ws(' ', r.store_name, r.store_code, r.agent_name)), lower($4)) > 0
+       ORDER BY r.store_code, r.agent_name, r.updated_at DESC NULLS LAST, r.id DESC, a.department
+     ) stores
+     ORDER BY store_name, store_code, agent_name
+     LIMIT 30`,
+    [...scopeParameters(req.user), search.data],
+  );
+  res.json({ rows });
+});
+
+router.get('/filters', async (req, res) => {
+  const { rows } = await pool.query(
+    `SELECT DISTINCT department, agent_name
+       FROM public.laska_photo_reports WHERE ${reportScope}
+      ORDER BY department, agent_name`,
+    scopeParameters(req.user),
+  );
+  res.json({ rows });
+});
+
+router.get('/', async (req, res) => {
+  const filters = reportFilters.safeParse(req.query);
+  if (!filters.success) return res.status(400).json({ message: 'Перевірте дати й параметри фільтра.' });
+  const { from, to, department, agent, search, category, page } = filters.data;
+  const { rows } = await pool.query(
+    `SELECT id, report_date::text, department, agent_name, store_code, store_name, category, comment, photos
+       FROM public.laska_photo_reports
+      WHERE ${reportScope}
+        AND ($4::date IS NULL OR report_date >= $4)
+        AND ($5::date IS NULL OR report_date <= $5)
+        AND ($6 = '' OR department = $6)
+        AND ($7 = '' OR agent_name = $7)
+        AND ($8 = '' OR strpos(lower(concat_ws(' ', store_name, store_code)), lower($8)) > 0)
+        AND ($9::text IS NULL OR category = $9)
+      ORDER BY report_date DESC, created_at DESC, id DESC
+      LIMIT $10 OFFSET $11`,
+    [...scopeParameters(req.user), from, to, department, agent, search, category, pageSize + 1, (page - 1) * pageSize],
+  );
+  if (rows.length) ensureCloudinaryConfigured();
+  res.json({
+    rows: rows.slice(0, pageSize).map(({ photos, ...report }) => ({
+      ...report,
+      photos: photos.map(({ publicId, format, version }) => cloudinary.url(publicId, {
+        secure: true, type: mediaType, sign_url: true, format, version,
+      })),
+    })),
+    hasNext: rows.length > pageSize,
+  });
+});
+
+router.post('/', (req, res, next) => {
+  upload(req, res, error => {
+    if (error) return res.status(400).json({ message: 'Додайте до трьох фото JPG, PNG або WebP розміром до 5 МБ кожне.' });
+    next();
+  });
+}, async (req, res) => {
+  const parsed = newReport.safeParse(req.body);
+  if (!parsed.success || !req.files?.length) {
+    return res.status(400).json({ message: 'Виберіть торгову точку, дату, категорію та фото JPG, PNG або WebP.' });
+  }
+  const { id, routeId, reportDate, category, comment } = parsed.data;
+  const { email } = req.user;
+  const client = await pool.connect();
+  const publicIds = [];
+  let committing = false;
+  let connectionError;
+  try {
+    await client.query('BEGIN');
+    await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [id]);
+    const { rows: [existing] } = await client.query(
+      'SELECT created_by FROM public.laska_photo_reports WHERE id = $1', [id],
+    );
+    if (existing) {
+      await client.query('ROLLBACK');
+      return existing.created_by === email
+        ? res.json({ id })
+        : res.status(409).json({ message: 'Цей ідентифікатор фотозвіту вже використано.' });
+    }
+    const { rows: [store] } = await client.query(
+      `SELECT r.store_code, r.store_name, r.agent_name, COALESCE(a.department, '') AS department
+       ${routesFrom} AND r.id = $4 ORDER BY a.department LIMIT 1`,
+      [...scopeParameters(req.user), routeId],
+    );
+    if (!store) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({ message: 'Торгова точка недоступна. Виберіть точку зі списку.' });
+    }
+    const folder = process.env.CLOUDINARY_FOLDER || 'soda-reports';
+    const photos = [];
+    for (const file of req.files) {
+      const publicId = `${folder}/laska/${id}/${randomUUID()}`;
+      publicIds.push(publicId);
+      const asset = await uploadToCloudinary(file, {
+        folder: undefined,
+        public_id: publicId,
+        type: mediaType,
+        allowed_formats: ['jpg', 'jpeg', 'png', 'webp'],
+        overwrite: false,
+        timeout: 15000,
+        disable_promise: true,
+      });
+      photos.push({ publicId: asset.public_id, format: asset.format, version: asset.version });
+    }
+    await client.query(
+      `INSERT INTO public.laska_photo_reports
+         (id, created_by, report_date, department, agent_name, store_code, store_name, category, comment, photos)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb)`,
+      [id, email, reportDate, store.department, store.agent_name, store.store_code,
+        store.store_name, category, comment, JSON.stringify(photos)],
+    );
+    committing = true;
+    await client.query('COMMIT');
+    return res.status(201).json({ id });
+  } catch (error) {
+    await client.query('ROLLBACK').catch(rollbackError => { connectionError = rollbackError; });
+    // A lost response to COMMIT can leave a valid report in Neon.
+    if (!committing) {
+      const cleanup = await Promise.allSettled(publicIds.map(publicId =>
+        cloudinary.uploader.destroy(publicId, { type: mediaType, timeout: 10000 }),
+      ));
+      if (cleanup.some(result => result.status === 'rejected')) {
+        req.log?.warn({ reportId: id }, 'Could not clean up all photo report uploads');
+      }
+    }
+    req.log?.error({ reportId: id, code: error.code, status: error.http_code }, 'Photo report creation failed');
+    const badPhoto = [400, 415].includes(error.http_code);
+    return res.status(badPhoto ? 400 : 503).json({
+      message: badPhoto ? 'Cloudinary не прийняв одне з фото.' : 'Не вдалося зберегти фотозвіт. Спробуйте ще раз.',
+    });
+  } finally {
+    client.release(connectionError);
+  }
+});
+
+export default router;

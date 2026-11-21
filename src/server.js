@@ -25,6 +25,7 @@ import laskaDictionaryRoutes from './routes/laskaDictionaryRoutes.js';
 import adminDictionariesRoutes from './routes/adminDictionariesRoutes.js';
 import laskaUploadRoutes from './routes/laskaUploadRoutes.js';
 import laskaEquipmentRoutes from './routes/laskaEquipmentRoutes.js';
+import laskaPhotoReportRoutes from './routes/laskaPhotoReportRoutes.js';
 import laskaImportRoutes from './routes/laskaImportRoutes.js';
 
 import motivationRoutes from './modules/motivation/motivation.routes.js';
@@ -53,6 +54,7 @@ app.use('/api/sales', compression({ threshold: 1024, level: 4 }), salesRoutes);
 app.use('/api/motivation', motivationRoutes);
 app.use('/api/laska/receivables', receivablesRoutes);
 app.use('/api/laska/equipment', compression({ threshold: 1024, level: 4 }), laskaEquipmentRoutes);
+app.use('/api/laska/photo-reports', laskaPhotoReportRoutes);
 
 app.use('/api/upload', uploadRoutes);
 app.use('/api/upload/photos', uploadPhotosRoutes);
