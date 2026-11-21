@@ -36,6 +36,10 @@ const validate = (c, body) => {
   }
   for (const key of c.required) if (!result[key]) throw new Error('Заповніть поле ' + key);
   if (c.table === 'sales_routes') {
+    if (body.is_seasonal !== undefined) {
+      if (typeof body.is_seasonal !== 'boolean') throw new Error('Некоректне поле: is_seasonal');
+      result.is_seasonal = body.is_seasonal;
+    }
     const days = ['ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ', 'НД'];
     const parts = String(result.route_day ?? '').split(',').map(x => x.trim()).filter(Boolean);
     if (parts.some(x => !days.includes(x))) throw new Error('Невірний день тижня');
@@ -46,6 +50,9 @@ const validate = (c, body) => {
 const handle = (fn) => async (req, res) => {
   try { await fn(req, res); } catch (e) {
     if (e.message?.startsWith('Заповніть') || e.message?.startsWith('Некорект') || e.message?.startsWith('Невірний') || e.message?.startsWith('Порядок')) return res.status(400).json({ message: e.message });
+    if (e.code === '42703' && req.params.kind === 'routes' && typeof req.body?.is_seasonal === 'boolean') {
+      return res.status(409).json({ message: 'Для збереження сезонності потрібно оновити схему довідника маршрутів.' });
+    }
     console.error('Dictionary editor:', e);
     res.status(500).json({ message: 'Помилка роботи з довідником.' });
   }
@@ -55,7 +62,8 @@ router.get('/:kind/filters', handle(async (req, res) => {
   const allowed = c.fields.filter(f => f !== 'product_name' && f !== 'store_name' && f !== 'stop_order' && f !== 'store_code');
   const options = {};
   for (const field of allowed) {
-    const result = await pool.query('SELECT DISTINCT ' + field + ' AS value FROM ' + c.table + ' WHERE ' + field + ' IS NOT NULL AND trim(' + field + ") <> '' ORDER BY value LIMIT 1000");
+    const limit = c.table === 'products' ? '' : ' LIMIT 1000';
+    const result = await pool.query(`SELECT DISTINCT ${field} AS value FROM ${c.table} WHERE ${field} IS NOT NULL AND trim(${field}) <> '' ORDER BY value${limit}`);
     options[field] = result.rows.map(row => row.value);
   }
   if (c.table === 'sales_routes') options.route_day = ['ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ', 'НД'];
@@ -65,16 +73,25 @@ router.get('/:kind', handle(async (req, res) => {
   const c = config(req, res); if (!c) return;
   const q = String(req.query.q || '').trim().slice(0, 120);
   const page = Math.min(100000, Math.max(1, Number.parseInt(req.query.page, 10) || 1));
+  const pageSize = req.query.pageSize === '20' ? 20 : 50;
   const params = [];
   const conditions = [];
+  if (c.table === 'sales_routes' && req.query.includeSeasonal !== 'true') {
+    conditions.push("to_jsonb(sales_routes)->'is_seasonal' IS DISTINCT FROM 'true'::jsonb");
+  }
   if (q) {
     params.push('%' + q + '%');
     conditions.push(c.table === 'products'
       ? '(product_name ILIKE $' + params.length + ')'
       : '(store_name ILIKE $' + params.length + ' OR agent_name ILIKE $' + params.length + ' OR store_code ILIKE $' + params.length + ')');
   }
+  const empty = new Set([req.query.empty].flat());
   for (const field of c.fields) {
     if (field === 'product_name' || field === 'store_name' || field === 'stop_order') continue;
+    if (c.table === 'products' && empty.has(field)) {
+      conditions.push(`NULLIF(trim(${field}), '') IS NULL`);
+      continue;
+    }
     const value = String(req.query[field] || '').trim().slice(0, 200);
     if (!value) continue;
     params.push(value);
@@ -84,7 +101,10 @@ router.get('/:kind', handle(async (req, res) => {
   }
   const filter = conditions.length ? ' WHERE ' + conditions.join(' AND ') : '';
   const count = await pool.query('SELECT count(*)::int AS total FROM ' + c.table + filter, params);
-  const result = await pool.query('SELECT * FROM ' + c.table + filter + ' ORDER BY id DESC LIMIT 50 OFFSET $' + (params.length + 1), [...params, (page - 1) * 50]);
+  const result = await pool.query(
+    'SELECT * FROM ' + c.table + filter + ' ORDER BY id DESC LIMIT $' + (params.length + 1) + ' OFFSET $' + (params.length + 2),
+    [...params, pageSize, (page - 1) * pageSize],
+  );
   res.json({ rows: result.rows, total: count.rows[0].total, page });
 }));
 router.post('/:kind', handle(async (req, res) => {

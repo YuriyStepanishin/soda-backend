@@ -29,6 +29,7 @@ const equipmentSearch = `$4 = '' OR strpos(lower(concat_ws(' ', e.store_name, e.
 const storeFilters = filters.extend({
   route: z.string().trim().max(80).default(''),
   presence: z.enum(['all', 'present', 'absent', 'unknown']).default('all'),
+  pageSize: z.enum(['20', '50']).default('50').transform(Number),
 });
 
 router.use(validateSalesTenantHeader, authenticate, resolveSalesTenant(), (req, res, next) => {
@@ -67,7 +68,7 @@ router.get('/stores', async (req, res) => {
   if (!parsed.success) return res.status(400).json({ message: 'Некоректні параметри пошуку' });
 
   const { role, representative, departments } = req.user;
-  const { search, page, route, presence } = parsed.data;
+  const { search, page, route, presence, pageSize: storePageSize } = parsed.data;
   const { rows: [result] } = await getPool('laska').query(
     `WITH scoped AS (
        SELECT e.route_code, e.agent_name, e.store_code, e.store_name, e.equipment_name,
@@ -105,13 +106,13 @@ router.get('/stores', async (req, res) => {
      )
      SELECT COALESCE((SELECT jsonb_agg(p ORDER BY p.store_name, p.store_code) FROM store_page p), '[]') AS stores,
             ARRAY(SELECT DISTINCT route_code FROM scoped WHERE nullif(btrim(route_code), '') IS NOT NULL ORDER BY route_code) AS routes`,
-    [role, representative || null, departments || [], search, pageSize + 1, (page - 1) * pageSize, route, presence],
+    [role, representative || null, departments || [], search, storePageSize + 1, (page - 1) * storePageSize, route, presence],
   );
 
   res.set('Cache-Control', 'no-store').json({
-    stores: result.stores.slice(0, pageSize),
+    stores: result.stores.slice(0, storePageSize),
     routes: result.routes,
-    hasNext: result.stores.length > pageSize,
+    hasNext: result.stores.length > storePageSize,
   });
 });
 
