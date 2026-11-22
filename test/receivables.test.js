@@ -38,6 +38,8 @@ test('owners require dictionary match and route majority; duplicate route number
 test('agents and supervisors cannot broaden database scope', () => {
   assert.deepEqual(buildScope({role:'agent',representative:'Агент'}),{sql:'agent = $1',params:['Агент']});
   assert.deepEqual(buildScope({role:'supervisor',departments:[]}),{sql:'department = ANY($1::text[])',params:[[]]});
+  assert.deepEqual(buildScope({role:'supervisor',departments:[],department:'Область'}),{sql:'department = ANY($1::text[])',params:[['Область']]});
+  assert.deepEqual(buildScope({role:'brand_manager',department:'Область'}),{sql:'FALSE',params:[]});
   for(const user of [{role:'agent',tenant:'olgatorg'},{role:'brand_manager',tenant:'laska'}]) {
     let code; let nextCalled=false;
     requireReceivablesAccess({user,headers:{'x-tenant-id':'laska'}},{status(value){code=value;return this;},json(){}},()=>{nextCalled=true;});
