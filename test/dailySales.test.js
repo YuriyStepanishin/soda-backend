@@ -54,7 +54,8 @@ test('one aggregate query to the selected pool; LASKA uses agent departments for
     assert.doesNotMatch(sql, /daily_weight|REPLACE/);
   }
   assert.match(calls[0].sql, /LEFT JOIN public.agents a/);
-  assert.doesNotMatch(calls[0].sql, /JOIN public.products/);
+  assert.match(calls[0].sql, /LEFT JOIN public.products p/);
+  assert.match(calls[0].sql, /COALESCE\(p\.group_name, ''\).*<> 'ІНШЕ'/);
   assert.match(calls[0].sql, /THEN s\.sale_date ELSE s\.sale_date - 1 END/);
   assert.doesNotMatch(calls[1].sql, /CASE WHEN|sale_date - 1/);
 });
