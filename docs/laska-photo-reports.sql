@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS public.laska_photo_reports (
   store_name text NOT NULL,
   category text NOT NULL CHECK (category IN ('merchandising', 'equipment', 'other')),
   comment text NOT NULL CHECK (length(comment) <= 1000),
-  photos jsonb NOT NULL CHECK (jsonb_typeof(photos) = 'array' AND jsonb_array_length(photos) BETWEEN 1 AND 3)
+  photos jsonb NOT NULL CHECK (jsonb_typeof(photos) = 'array' AND jsonb_array_length(photos) BETWEEN 1 AND 5)
 );
 
 CREATE INDEX IF NOT EXISTS laska_photo_reports_date_idx
@@ -20,3 +20,5 @@ CREATE INDEX IF NOT EXISTS laska_photo_reports_agent_date_idx
 
 CREATE INDEX IF NOT EXISTS laska_photo_reports_department_date_idx
   ON public.laska_photo_reports (department, report_date DESC);
+
+-- Existing databases: update the photo count constraint to 5 (applied to LASKA Neon).
