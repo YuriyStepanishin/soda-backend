@@ -15,7 +15,7 @@ const plan = z.object({
   agentPlans: z.record(z.string().min(1).max(160), z.number().finite().min(0).max(1e12)),
 });
 router.use(validateSalesTenantHeader, authenticate, resolveSalesTenant(), (req,res,next)=>{
-  if(req.salesTenant !== 'laska' || !['admin','manager','supervisor','agent'].includes(req.user.role)) return res.status(403).json({message:'Доступ заборонено'});
+  if(req.salesTenant !== 'laska' || !['admin','manager','supervisor','agent','brand_manager'].includes(req.user.role)) return res.status(403).json({message:'Доступ заборонено'});
   res.set('Cache-Control','no-store');
   next();
 });
