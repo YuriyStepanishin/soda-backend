@@ -90,7 +90,11 @@ export function requireReceivablesAccess(req, res, next) {
 
 export function buildScope(user) {
   if (user.role === 'agent') return { sql: 'agent = $1', params: [user.representative || ''] };
-  if (['supervisor', 'brand_manager'].includes(user.role)) return { sql: 'department = ANY($1::text[])', params: [user.departments || (user.department ? [user.department] : [])] };
+  if (['supervisor', 'brand_manager'].includes(user.role)) {
+    const departments = Array.isArray(user.departments) && user.departments.length
+      ? user.departments : (user.department ? [user.department] : []);
+    return { sql: 'department = ANY($1::text[])', params: [departments] };
+  }
   if (['admin', 'manager'].includes(user.role)) return { sql: 'TRUE', params: [] };
   return { sql: 'FALSE', params: [] };
 }
