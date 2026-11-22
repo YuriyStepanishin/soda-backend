@@ -153,47 +153,57 @@ router.post('/', (req, res, next) => {
     if (photoLocations.length && photoLocations.length !== req.files.length) throw new Error('GPS count mismatch');
   } catch { return res.status(400).json({ message: 'Некоректні координати фотографій.' }); }
   const { email } = req.user;
-  const client = await pool.connect();
   const publicIds = [];
   let committing = false;
   let connectionError;
+  let client;
   try {
-    await client.query('BEGIN');
-    await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [id]);
-    const { rows: [existing] } = await client.query(
+    // Preflight uses the pool without holding a transaction during Cloudinary uploads.
+    const { rows: [existing] } = await pool.query(
       'SELECT created_by FROM public.laska_photo_reports WHERE id = $1', [id],
     );
-    if (existing) {
-      await client.query('ROLLBACK');
-      return existing.created_by === email
-        ? res.json({ id })
-        : res.status(409).json({ message: 'Цей ідентифікатор фотозвіту вже використано.' });
-    }
-    const { rows: [store] } = await client.query(
+    if (existing) return existing.created_by === email
+      ? res.json({ id })
+      : res.status(409).json({ message: 'Цей ідентифікатор фотозвіту вже використано.' });
+    const { rows: [store] } = await pool.query(
       `SELECT r.store_code, r.store_name, r.agent_name, COALESCE(a.department, '') AS department
        ${routesFrom} AND r.id = $4 ORDER BY a.department LIMIT 1`,
       [...scopeParameters(req.user), routeId],
     );
-    if (!store) {
-      await client.query('ROLLBACK');
-      return res.status(403).json({ message: 'Торгова точка недоступна. Виберіть точку зі списку.' });
-    }
+    if (!store) return res.status(403).json({ message: 'Торгова точка недоступна. Виберіть точку зі списку.' });
+
     const folder = process.env.CLOUDINARY_FOLDER || 'soda-reports';
     const photos = [];
     for (const [index, file] of req.files.entries()) {
       const publicId = `${folder}/laska/${id}/${randomUUID()}`;
       publicIds.push(publicId);
       const asset = await uploadToCloudinary(file, {
-        folder: undefined,
-        public_id: publicId,
-        type: mediaType,
+        folder: undefined, public_id: publicId, type: mediaType,
         allowed_formats: ['jpg', 'jpeg', 'png', 'webp'],
-        overwrite: false,
-        timeout: 15000,
-        disable_promise: true,
+        overwrite: false, timeout: 15000, disable_promise: true,
       });
       photos.push({ publicId: asset.public_id, format: asset.format, version: asset.version,
-        latitude: photoLocations[index]?.latitude ?? null, longitude: photoLocations[index]?.longitude ?? null });
+        latitude: photoLocations[index]?.latitude ?? null,
+        longitude: photoLocations[index]?.longitude ?? null });
+    }
+
+    // Keep the database transaction short. The advisory lock makes retries idempotent.
+    client = await pool.connect();
+    await client.query('BEGIN');
+    await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [id]);
+    const { rows: [duplicate] } = await client.query(
+      'SELECT created_by FROM public.laska_photo_reports WHERE id = $1', [id],
+    );
+    if (duplicate) {
+      await client.query('ROLLBACK');
+      // These uploads belong to this request, not to the existing report.
+      const cleanup = await Promise.allSettled(publicIds.map(publicId =>
+        cloudinary.uploader.destroy(publicId, { type: mediaType, timeout: 10000 })));
+      if (cleanup.some(result => result.status === 'rejected')) {
+        req.log?.warn({ reportId: id }, 'Could not clean up duplicate photo uploads');
+      }
+      return duplicate.created_by === email ? res.json({ id })
+        : res.status(409).json({ message: 'Цей ідентифікатор фотозвіту вже використано.' });
     }
     await client.query(
       `INSERT INTO public.laska_photo_reports
@@ -206,7 +216,7 @@ router.post('/', (req, res, next) => {
     await client.query('COMMIT');
     return res.status(201).json({ id });
   } catch (error) {
-    await client.query('ROLLBACK').catch(rollbackError => { connectionError = rollbackError; });
+    if (client) await client.query('ROLLBACK').catch(rollbackError => { connectionError = rollbackError; });
     // A lost response to COMMIT can leave a valid report in Neon.
     if (!committing) {
       const cleanup = await Promise.allSettled(publicIds.map(publicId =>
@@ -222,7 +232,7 @@ router.post('/', (req, res, next) => {
       message: badPhoto ? 'Cloudinary не прийняв одне з фото.' : 'Не вдалося зберегти фотозвіт. Спробуйте ще раз.',
     });
   } finally {
-    client.release(connectionError);
+    if (client) client.release(connectionError);
   }
 });
 
