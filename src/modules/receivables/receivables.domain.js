@@ -82,7 +82,7 @@ export function requireReceivablesAccess(req, res, next) {
   const user = req.user;
   const tenant = req.headers['x-tenant-id'] || (user?.role !== 'admin' ? user?.tenant : null);
   if (tenant !== 'laska' || (user?.role !== 'admin' && user?.tenant !== 'laska') ||
-      !['admin', 'manager', 'supervisor', 'agent'].includes(user?.role)) {
+      !['admin', 'manager', 'supervisor', 'agent', 'brand_manager'].includes(user?.role)) {
     return res.status(403).json({ message: 'Дебіторка доступна лише користувачам Ласки' });
   }
   next();
@@ -90,7 +90,7 @@ export function requireReceivablesAccess(req, res, next) {
 
 export function buildScope(user) {
   if (user.role === 'agent') return { sql: 'agent = $1', params: [user.representative || ''] };
-  if (user.role === 'supervisor') return { sql: 'department = ANY($1::text[])', params: [user.departments || []] };
+  if (['supervisor', 'brand_manager'].includes(user.role)) return { sql: 'department = ANY($1::text[])', params: [user.departments || (user.department ? [user.department] : [])] };
   if (['admin', 'manager'].includes(user.role)) return { sql: 'TRUE', params: [] };
   return { sql: 'FALSE', params: [] };
 }
