@@ -150,8 +150,8 @@ router.post('/', (req, res, next) => {
       (location.latitude != null && (typeof location.latitude !== 'number' || !Number.isFinite(location.latitude) || Math.abs(location.latitude) > 90)) ||
       (location.longitude != null && (typeof location.longitude !== 'number' || !Number.isFinite(location.longitude) || Math.abs(location.longitude) > 180))
     )) throw new Error('invalid GPS');
-    if (photoLocations.length && photoLocations.length !== req.files.length) throw new Error('GPS count mismatch');
-  } catch { return res.status(400).json({ message: 'Некоректні координати фотографій.' }); }
+    if (photoLocations.length !== req.files.length || photoLocations.some(location => location.latitude == null || location.longitude == null)) throw new Error('GPS required for every photo');
+  } catch { return res.status(400).json({ message: 'Геолокація обов’язкова для кожного фото. Увімкніть GPS і зробіть фото повторно.' }); }
   const { email } = req.user;
   const publicIds = [];
   let committing = false;
