@@ -73,7 +73,9 @@ router.use(validateSalesTenantHeader, authenticate, resolveSalesTenant(), (req, 
 
 router.get('/stores', async (req, res) => {
   const search = searchText.safeParse(req.query.search);
-  if (!search.success) return res.status(400).json({ message: 'Некоректний пошук торгової точки.' });
+  const department = searchText.safeParse(req.query.department);
+  const agent = searchText.safeParse(req.query.agent);
+  if (!department.success || !agent.success || !search.success) return res.status(400).json({ message: 'Некоректний пошук торгової точки.' });
   const { rows } = await pool.query(
     `SELECT id::text, store_code, store_name, agent_name, department
      FROM (
@@ -81,20 +83,25 @@ router.get('/stores', async (req, res) => {
               r.agent_name, COALESCE(a.department, '') AS department
        ${routesFrom}
          AND strpos(lower(concat_ws(' ', r.store_name, r.store_code, r.agent_name)), lower($4)) > 0
+         AND ($5 = '' OR a.department = $5)
+         AND ($6 = '' OR r.agent_name = $6)
        ORDER BY r.store_code, r.agent_name, r.updated_at DESC NULLS LAST, r.id DESC, a.department
      ) stores
      ORDER BY store_name, store_code, agent_name
      LIMIT 30`,
-    [...scopeParameters(req.user), search.data],
+    [...scopeParameters(req.user), search.data, department.data, agent.data],
   );
   res.json({ rows });
 });
 
 router.get('/filters', async (req, res) => {
   const { rows } = await pool.query(
-    `SELECT DISTINCT department, agent_name
-       FROM public.laska_photo_reports WHERE ${reportScope}
-      ORDER BY department, agent_name`,
+    `SELECT DISTINCT department, agent_name FROM (
+       SELECT COALESCE(a.department, '') AS department, r.agent_name
+       ${routesFrom}
+       UNION
+       SELECT department, agent_name FROM public.laska_photo_reports WHERE ${reportScope}
+     ) available ORDER BY department, agent_name`,
     scopeParameters(req.user),
   );
   res.json({ rows });
