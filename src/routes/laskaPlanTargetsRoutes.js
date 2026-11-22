@@ -19,6 +19,11 @@ router.use(validateSalesTenantHeader, authenticate, resolveSalesTenant(), (req,r
   res.set('Cache-Control','no-store');
   next();
 });
+router.get('/agents', async(req,res)=>{
+  if(!['admin','manager'].includes(req.user.role)) return res.status(403).json({message:'Доступ заборонено'});
+  const {rows}=await pool.query("SELECT DISTINCT ta AS name, COALESCE(department,'') AS department FROM public.agents WHERE nullif(trim(ta),'') IS NOT NULL ORDER BY department,name");
+  res.json({rows});
+});
 router.get('/', async(req,res)=>{
   const {rows}=await pool.query('SELECT id,label,metric,threshold::float8,brand,display_order AS "displayOrder",agent_plans AS "agentPlans" FROM public.laska_plan_targets ORDER BY display_order,id');
   if(req.user.role === 'agent'){
