@@ -30,18 +30,19 @@ const newReport = z.object({
   reportDate: calendarDate,
   category: categories,
   comment: z.string().trim().max(1000).default(''),
+  photoLocations: z.string().max(1024).optional(),
 });
 const mediaType = 'authenticated';
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { files: 3, fileSize: 5 * 1024 * 1024, fields: 5, fieldSize: 4096, parts: 9 },
+  limits: { files: 5, fileSize: 5 * 1024 * 1024, fields: 6, fieldSize: 4096, parts: 12 },
   fileFilter(_req, file, callback) {
     if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.mimetype)) {
       return callback(new multer.MulterError('LIMIT_UNEXPECTED_FILE', 'photos'));
     }
     callback(null, true);
   },
-}).array('photos', 3);
+}).array('photos', 5);
 
 const scopeParameters = ({ role, representative, department, departments }) => [
   role,
@@ -121,8 +122,9 @@ router.get('/', async (req, res) => {
   res.json({
     rows: rows.slice(0, pageSize).map(({ photos, ...report }) => ({
       ...report,
-      photos: photos.map(({ publicId, format, version }) => cloudinary.url(publicId, {
-        secure: true, type: mediaType, sign_url: true, format, version,
+      photos: photos.map(({ publicId, format, version, latitude = null, longitude = null }) => ({
+        url: cloudinary.url(publicId, { secure: true, type: mediaType, sign_url: true, format, version }),
+        latitude, longitude,
       })),
     })),
     hasNext: rows.length > pageSize,
@@ -131,7 +133,7 @@ router.get('/', async (req, res) => {
 
 router.post('/', (req, res, next) => {
   upload(req, res, error => {
-    if (error) return res.status(400).json({ message: 'Додайте до трьох фото JPG, PNG або WebP розміром до 5 МБ кожне.' });
+    if (error) return res.status(400).json({ message: 'Додайте до п’яти фото JPG, PNG або WebP розміром до 5 МБ кожне.' });
     next();
   });
 }, async (req, res) => {
@@ -140,6 +142,16 @@ router.post('/', (req, res, next) => {
     return res.status(400).json({ message: 'Виберіть торгову точку, дату, категорію та фото JPG, PNG або WebP.' });
   }
   const { id, routeId, reportDate, category, comment } = parsed.data;
+  let photoLocations = [];
+  try {
+    photoLocations = parsed.data.photoLocations ? JSON.parse(parsed.data.photoLocations) : [];
+    if (!Array.isArray(photoLocations) || photoLocations.length > 5 || photoLocations.some(location =>
+      location == null || typeof location !== 'object' ||
+      (location.latitude != null && (typeof location.latitude !== 'number' || !Number.isFinite(location.latitude) || Math.abs(location.latitude) > 90)) ||
+      (location.longitude != null && (typeof location.longitude !== 'number' || !Number.isFinite(location.longitude) || Math.abs(location.longitude) > 180))
+    )) throw new Error('invalid GPS');
+    if (photoLocations.length && photoLocations.length !== req.files.length) throw new Error('GPS count mismatch');
+  } catch { return res.status(400).json({ message: 'Некоректні координати фотографій.' }); }
   const { email } = req.user;
   const client = await pool.connect();
   const publicIds = [];
@@ -168,7 +180,7 @@ router.post('/', (req, res, next) => {
     }
     const folder = process.env.CLOUDINARY_FOLDER || 'soda-reports';
     const photos = [];
-    for (const file of req.files) {
+    for (const [index, file] of req.files.entries()) {
       const publicId = `${folder}/laska/${id}/${randomUUID()}`;
       publicIds.push(publicId);
       const asset = await uploadToCloudinary(file, {
@@ -180,7 +192,8 @@ router.post('/', (req, res, next) => {
         timeout: 15000,
         disable_promise: true,
       });
-      photos.push({ publicId: asset.public_id, format: asset.format, version: asset.version });
+      photos.push({ publicId: asset.public_id, format: asset.format, version: asset.version,
+        latitude: photoLocations[index]?.latitude ?? null, longitude: photoLocations[index]?.longitude ?? null });
     }
     await client.query(
       `INSERT INTO public.laska_photo_reports
