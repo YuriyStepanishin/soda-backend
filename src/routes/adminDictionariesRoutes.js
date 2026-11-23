@@ -66,7 +66,7 @@ router.get('/:kind/filters', handle(async (req, res) => {
     const result = await pool.query(`SELECT DISTINCT ${field} AS value FROM ${c.table} WHERE ${field} IS NOT NULL AND trim(${field}) <> '' ORDER BY value${limit}`);
     options[field] = result.rows.map(row => row.value);
   }
-  if (c.table === 'sales_routes') options.route_day = ['ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ', 'НД'];
+  if (c.table === 'sales_routes') options.route_day = ['ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ'];
   res.json(options);
 }));
 router.get('/:kind', handle(async (req, res) => {
@@ -94,6 +94,10 @@ router.get('/:kind', handle(async (req, res) => {
     }
     const value = String(req.query[field] || '').trim().slice(0, 200);
     if (!value) continue;
+    if (c.table === 'sales_routes' && field === 'route_day' && value === '__none__') {
+      conditions.push("NULLIF(btrim(route_day), '') IS NULL");
+      continue;
+    }
     params.push(value);
     conditions.push(c.table === 'sales_routes' && field === 'route_day'
       ? "POSITION(',' || $" + params.length + " || ',' IN ',' || replace(" + field + ", ' ', '') || ',') > 0"
