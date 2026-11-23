@@ -71,6 +71,69 @@ router.use(validateSalesTenantHeader, authenticate, resolveSalesTenant(), (req, 
   next();
 });
 
+// On-demand reverse geocoding only when a photo is opened. Cache by approximate GPS
+// location and serialize requests to respect the public OSM Nominatim 1 req/s limit.
+const locationCache = new Map();
+let reverseGeocodeQueue = Promise.resolve();
+let lastReverseLookup = 0;
+function formatPhotoLocation(address = {}) {
+  const locality = address.city || address.town || address.village || address.hamlet
+    || address.municipality || address.city_district || address.suburb || address.county || '';
+  const street = address.road || address.pedestrian || address.residential || '';
+  const building = address.house_number || '';
+  const formatted = [street && [street, building].filter(Boolean).join(', '), address.neighbourhood || '']
+    .filter(Boolean).join(' · ');
+  return { locality: String(locality), address: String(formatted) };
+}
+router.get('/reverse-location', async (req, res) => {
+  const latitude = Number(req.query.latitude);
+  const longitude = Number(req.query.longitude);
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)
+      || Math.abs(latitude) > 90 || Math.abs(longitude) > 180
+      || req.query.latitude === undefined || req.query.longitude === undefined) {
+    return res.status(400).json({ message: 'Некоректні координати.' });
+  }
+  const key = latitude.toFixed(4) + ',' + longitude.toFixed(4);
+  const cached = locationCache.get(key);
+  if (cached && cached.expires > Date.now()) return res.json(cached.value);
+  const lookup = async () => {
+    const existing = locationCache.get(key);
+    if (existing && existing.expires > Date.now()) return existing.value;
+    const gap = Date.now() - lastReverseLookup;
+    if (gap < 1200) await new Promise(resolve => setTimeout(resolve, 1200 - gap));
+    lastReverseLookup = Date.now();
+    const url = new URL('https://nominatim.openstreetmap.org/reverse');
+    url.searchParams.set('format', 'jsonv2');
+    url.searchParams.set('addressdetails', '1');
+    url.searchParams.set('accept-language', 'uk');
+    url.searchParams.set('zoom', '18');
+    url.searchParams.set('lat', key.split(',')[0]);
+    url.searchParams.set('lon', key.split(',')[1]);
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'SODA-sales/3.9.5 (https://soda-frontend-omega.vercel.app/)',
+        'Referer': 'https://soda-frontend-omega.vercel.app/',
+        'Accept': 'application/json',
+      },
+      signal: AbortSignal.timeout(6000),
+    });
+    if (!response.ok) throw new Error('Geocoder temporarily unavailable');
+    const json = await response.json();
+    const result = formatPhotoLocation(json.address);
+    locationCache.set(key, { value: result, expires: Date.now() + 30 * 86400 * 1000 });
+    // Keep memory bounded: evict earliest inserted item.
+    if (locationCache.size > 3000) locationCache.delete(locationCache.keys().next().value);
+    return result;
+  };
+  const pending = reverseGeocodeQueue.then(lookup);
+  reverseGeocodeQueue = pending.then(() => undefined, () => undefined);
+  try {
+    return res.json(await pending);
+  } catch {
+    return res.status(503).json({ message: 'Адресу визначити не вдалося.' });
+  }
+});
+
 router.get('/stores', async (req, res) => {
   const search = searchText.safeParse(req.query.search);
   const department = searchText.safeParse(req.query.department);
