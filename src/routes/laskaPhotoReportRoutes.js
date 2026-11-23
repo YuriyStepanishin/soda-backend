@@ -123,7 +123,7 @@ router.get('/grouped', async (req, res) => {
       AND ($9::text IS NULL OR category = $9)`;
   try {
     const { rows: keys } = await pool.query(
-      `SELECT store_code, report_date AS latest ${filtered}
+      `SELECT store_code, report_date::text AS latest ${filtered}
        GROUP BY store_code, report_date ORDER BY latest DESC, store_code
        LIMIT $10 OFFSET $11`,
       [...params, pageSize + 1, (page - 1) * pageSize],
