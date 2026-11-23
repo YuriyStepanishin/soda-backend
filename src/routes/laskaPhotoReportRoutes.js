@@ -123,19 +123,23 @@ router.get('/grouped', async (req, res) => {
       AND ($9::text IS NULL OR category = $9)`;
   try {
     const { rows: keys } = await pool.query(
-      `SELECT store_code, max(report_date) AS latest ${filtered}
-       GROUP BY store_code ORDER BY latest DESC, store_code
+      `SELECT store_code, report_date AS latest ${filtered}
+       GROUP BY store_code, report_date ORDER BY latest DESC, store_code
        LIMIT $10 OFFSET $11`,
       [...params, pageSize + 1, (page - 1) * pageSize],
     );
-    const codes = keys.slice(0, pageSize).map(row => row.store_code);
-    if (!codes.length) return res.json({ rows: [], hasNext: false });
+    const selected = keys.slice(0, pageSize);
+    if (!selected.length) return res.json({ rows: [], hasNext: false });
+    const codes = selected.map(row => row.store_code);
+    const dates = selected.map(row => String(row.latest).slice(0, 10));
     const { rows } = await pool.query(
       `SELECT id, report_date::text, department, agent_name, store_code, store_name,
               category, comment, photos
-       ${filtered} AND store_code = ANY($10::text[])
+       ${filtered} AND (store_code, report_date) IN (
+         SELECT code, day::date FROM unnest($10::text[], $11::text[]) AS selected(code, day)
+       )
        ORDER BY report_date DESC, created_at DESC, id DESC`,
-      [...params, codes],
+      [...params, codes, dates],
     );
     if (rows.length) ensureCloudinaryConfigured();
     res.json({
