@@ -107,6 +107,57 @@ router.get('/filters', async (req, res) => {
   res.json({ rows });
 });
 
+// Paginate trading points rather than reports: photos for one store never split across pages.
+router.get('/grouped', async (req, res) => {
+  const filters = reportFilters.safeParse(req.query);
+  if (!filters.success) return res.status(400).json({ message: 'Перевірте дати й параметри фільтра.' });
+  const { from, to, department, agent, search, category, page } = filters.data;
+  const params = [...scopeParameters(req.user), from, to, department, agent, search, category];
+  const filtered = `FROM public.laska_photo_reports
+    WHERE ${reportScope}
+      AND ($4::date IS NULL OR report_date >= $4)
+      AND ($5::date IS NULL OR report_date <= $5)
+      AND ($6 = '' OR department = $6)
+      AND ($7 = '' OR agent_name = $7)
+      AND ($8 = '' OR strpos(lower(concat_ws(' ', store_name, store_code)), lower($8)) > 0)
+      AND ($9::text IS NULL OR category = $9)`;
+  try {
+    const { rows: keys } = await pool.query(
+      `SELECT store_code, report_date::text AS latest ${filtered}
+       GROUP BY store_code, report_date ORDER BY latest DESC, store_code
+       LIMIT $10 OFFSET $11`,
+      [...params, pageSize + 1, (page - 1) * pageSize],
+    );
+    const selected = keys.slice(0, pageSize);
+    if (!selected.length) return res.json({ rows: [], hasNext: false });
+    const codes = selected.map(row => row.store_code);
+    const dates = selected.map(row => String(row.latest).slice(0, 10));
+    const { rows } = await pool.query(
+      `SELECT id, report_date::text, department, agent_name, store_code, store_name,
+              category, comment, photos
+       ${filtered} AND (store_code, report_date) IN (
+         SELECT code, day::date FROM unnest($10::text[], $11::text[]) AS selected(code, day)
+       )
+       ORDER BY report_date DESC, created_at DESC, id DESC`,
+      [...params, codes, dates],
+    );
+    if (rows.length) ensureCloudinaryConfigured();
+    res.json({
+      rows: rows.map(({ photos, ...report }) => ({
+        ...report,
+        photos: photos.map(({ publicId, format, version, latitude = null, longitude = null }) => ({
+          url: cloudinary.url(publicId, { secure: true, type: mediaType, sign_url: true, format, version }),
+          latitude, longitude,
+        })),
+      })),
+      hasNext: keys.length > pageSize,
+    });
+  } catch (error) {
+    console.error('LASKA grouped photo gallery:', error);
+    res.status(500).json({ message: 'Не вдалося завантажити фотографії торгових точок.' });
+  }
+});
+
 router.get('/', async (req, res) => {
   const filters = reportFilters.safeParse(req.query);
   if (!filters.success) return res.status(400).json({ message: 'Перевірте дати й параметри фільтра.' });
