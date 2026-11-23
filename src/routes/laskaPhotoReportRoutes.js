@@ -138,6 +138,71 @@ router.get('/', async (req, res) => {
   });
 });
 
+
+router.get('/stats', async (req, res) => {
+  const filters = reportFilters.safeParse(req.query);
+  if (!filters.success) return res.status(400).json({ message: 'Перевірте дати й параметри фільтра.' });
+  const { from, to, department, agent, search, category } = filters.data;
+  const { rows: [stats] } = await pool.query(
+    `SELECT count(DISTINCT store_code)::int AS "storeCount",
+            COALESCE(sum(jsonb_array_length(photos)), 0)::int AS "photoCount"
+       FROM public.laska_photo_reports
+      WHERE ${reportScope}
+        AND ($4::date IS NULL OR report_date >= $4)
+        AND ($5::date IS NULL OR report_date <= $5)
+        AND ($6 = '' OR department = $6)
+        AND ($7 = '' OR agent_name = $7)
+        AND ($8 = '' OR strpos(lower(concat_ws(' ', store_name, store_code)), lower($8)) > 0)
+        AND ($9::text IS NULL OR category = $9)`,
+    [...scopeParameters(req.user), from, to, department, agent, search, category],
+  );
+  res.json(stats);
+});
+
+router.delete('/:id/photos/:index', async (req, res) => {
+  if (!/^[0-9a-f-]{36}$/i.test(req.params.id) || !/^\d+$/.test(req.params.index)) {
+    return res.status(400).json({ message: 'Некоректний ідентифікатор фото.' });
+  }
+  const index = Number(req.params.index);
+  let client;
+  try {
+    client = await pool.connect();
+    await client.query('BEGIN');
+    const { rows: [report] } = await client.query(
+      `SELECT id, photos FROM public.laska_photo_reports
+        WHERE id = $4 AND ${reportScope}
+        FOR UPDATE`,
+      [...scopeParameters(req.user), req.params.id],
+    );
+    if (!report) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ message: 'Фотозвіт не знайдено.' });
+    }
+    const photos = report.photos;
+    if (!Number.isSafeInteger(index) || index < 0 || index >= photos.length) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ message: 'Фото вже видалено або не знайдено.' });
+    }
+    const [removed] = photos.splice(index, 1);
+    ensureCloudinaryConfigured();
+    const result = await cloudinary.uploader.destroy(removed.publicId, { type: mediaType, invalidate: true });
+    if (!['ok', 'not found'].includes(result.result)) throw new Error('Cloudinary delete failed');
+    if (photos.length) {
+      await client.query('UPDATE public.laska_photo_reports SET photos = $2::jsonb WHERE id = $1', [report.id, JSON.stringify(photos)]);
+    } else {
+      await client.query('DELETE FROM public.laska_photo_reports WHERE id = $1', [report.id]);
+    }
+    await client.query('COMMIT');
+    return res.json({ success: true });
+  } catch (error) {
+    if (client) await client.query('ROLLBACK').catch(() => undefined);
+    req.log?.error({ code: error.code, reportId: req.params.id }, 'Photo delete failed');
+    return res.status(503).json({ message: 'Не вдалося видалити фото. Спробуйте ще раз.' });
+  } finally {
+    client?.release();
+  }
+});
+
 router.post('/', (req, res, next) => {
   upload(req, res, error => {
     if (error) return res.status(400).json({ message: 'Додайте до п’яти фото JPG, PNG або WebP розміром до 5 МБ кожне.' });
