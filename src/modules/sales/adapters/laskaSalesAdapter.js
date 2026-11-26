@@ -269,10 +269,7 @@ const getLaskaRouteHistory = async (req, res) => {
     });
 
     console.time('[ROUTE HISTORY] filters');
-    const filterRows = await getRouteHistoryFilters({
-      ta: effectiveQuery.ta,
-      department: effectiveQuery.department,
-    });
+    const filterRows = await getRouteHistoryFilters(effectiveQuery);
     console.timeEnd('[ROUTE HISTORY] filters');
 
     const routes = [

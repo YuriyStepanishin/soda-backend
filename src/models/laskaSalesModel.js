@@ -5,6 +5,8 @@ import { ROLES } from '../constants/roles.js';
 
 const laskaPool = getPool('laska');
 
+const missingAssignment = Symbol('missingAssignment');
+
 const GROUPING_FIELDS = new Set(['group', 'subgroup', 'tm', 'packing']);
 
 const STORE_EXPR = `COALESCE(NULLIF(TRIM("ТТ"), ''), 'Без ТТ')`;
@@ -73,11 +75,15 @@ export const getEffectiveQuery = (req) => {
   if (query.packings && !query.packing) query.packing = query.packings;
 
   if (req.user?.role === ROLES.AGENT) {
-    query.ta = req.user.representative;
+    const representative = req.user.representative?.trim();
+    query.ta = representative;
+    query[missingAssignment] = !representative;
   }
 
   if (req.user?.role === ROLES.SUPERVISOR) {
-    query.departments = req.user.departments || [];
+    const departments = normalizeFilterValues(req.user.departments);
+    query.departments = departments.length ? departments : normalizeFilterValues(req.user.department);
+    query[missingAssignment] = !query.departments.length;
   }
 
   if (req.user?.role === ROLES.BRAND_MANAGER) {
@@ -91,6 +97,7 @@ export const buildLaskaWhere = (query = {}) => {
   // Exclude the technical «IGNORE» group from all LASKA sales analytics.
   // Preserve raw sales in Neon; this filter only affects reporting queries.
   const conditions = [`UPPER(TRIM(COALESCE("Група", ''))) <> 'IGNORE'`];
+  if (query[missingAssignment]) conditions.push('FALSE');
   const params = [];
 
   const add = (condition, value) => {
@@ -637,7 +644,7 @@ export const buildSalesHistory = async ({ query: rawQuery = {}, user }) => {
 
   const addFilters = (conditions, params, aliases = {}) => {
     const salesAlias = aliases.sales || 's';
-    if (user?.role === ROLES.SUPERVISOR && !normalizeFilterValues(query.departments).length) conditions.push('FALSE');
+    if (query[missingAssignment]) conditions.push('FALSE');
     if (user?.role === ROLES.BRAND_MANAGER && !normalizeFilterValues(query.tms).length) conditions.push('FALSE');
     const productAlias = aliases.product || 'p';
 
@@ -994,7 +1001,9 @@ export const buildSalesHistory = async ({ query: rawQuery = {}, user }) => {
   };
 };
 
-export const getRouteHistoryFilters = async ({ ta, department }) => {
+export const getRouteHistoryFilters = async (query) => {
+  if (query[missingAssignment]) return [];
+  const { ta, department, departments } = query;
   const conditions = [];
   const params = [];
   if (ta) {
@@ -1004,6 +1013,10 @@ export const getRouteHistoryFilters = async ({ ta, department }) => {
   if (department) {
     params.push(department);
     conditions.push(`department = $${params.length}`);
+  }
+  if (departments?.length) {
+    params.push(normalizeFilterValues(departments));
+    conditions.push(`department = ANY($${params.length}::text[])`);
   }
   const result = await laskaPool.query(
     `
