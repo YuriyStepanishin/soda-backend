@@ -7,6 +7,7 @@ import { getPool } from '../db/index.js';
 import { authenticate } from '../middleware/authenticate.js';
 import { authorize } from '../middleware/authorize.js';
 import { ROLES } from '../constants/roles.js';
+import { laskaAgentKey } from '../utils/laskaAgentKey.js';
 import { resolveSalesTenant, validateSalesTenantHeader } from '../middleware/tenant.js';
 import { uploadToCloudinary } from '../services/cloudinary.js';
 
@@ -54,12 +55,12 @@ const scopeParameters = ({ role, representative, department, departments }) => [
 ];
 const scope = (agent, department) => `
   ($1 IN ('admin', 'manager')
-   OR ($1 = 'agent' AND $2 <> '' AND lower(btrim(${agent})) = lower(btrim($2)))
+   OR ($1 = 'agent' AND $2 <> '' AND ${laskaAgentKey(agent)} = ${laskaAgentKey('$2')})
    OR ($1 = 'supervisor' AND btrim(${department}) = ANY($3::text[])))`;
 const reportScope = scope('agent_name', 'department');
 const routesFrom = `
   FROM public.sales_routes r
-  LEFT JOIN public.agents a ON lower(btrim(a.ta)) = lower(btrim(r.agent_name))
+  LEFT JOIN public.agents a ON ${laskaAgentKey('a.ta')} = ${laskaAgentKey('r.agent_name')}
   WHERE r.tenant_id = 'LASKA'
     AND nullif(btrim(r.store_code), '') IS NOT NULL
     AND nullif(btrim(r.agent_name), '') IS NOT NULL
@@ -150,7 +151,7 @@ router.get('/stores', manageReports, async (req, res) => {
        ${routesFrom}
          AND strpos(lower(concat_ws(' ', r.store_name, r.store_code, r.agent_name)), lower($4)) > 0
          AND ($5 = '' OR btrim(a.department) = $5)
-         AND ($6 = '' OR btrim(r.agent_name) = $6)
+         AND ($6 = '' OR ${laskaAgentKey('r.agent_name')} = ${laskaAgentKey('$6')})
        ORDER BY r.store_code, r.agent_name, r.updated_at DESC NULLS LAST, r.id DESC, a.department
      ) stores
      ORDER BY store_name, store_code, agent_name
@@ -178,7 +179,7 @@ const filteredReports = `FROM public.laska_photo_reports
       AND ($4::date IS NULL OR report_date >= $4)
       AND ($5::date IS NULL OR report_date <= $5)
       AND ($6 = '' OR btrim(department) = $6)
-      AND ($7 = '' OR btrim(agent_name) = $7)
+      AND ($7 = '' OR ${laskaAgentKey('agent_name')} = ${laskaAgentKey('$7')})
       AND ($8 = '' OR strpos(lower(concat_ws(' ', store_name, store_code)), lower($8)) > 0)
       AND ($9::text IS NULL OR category = $9)`;
 

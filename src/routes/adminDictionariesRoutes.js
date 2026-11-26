@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { authenticate } from '../middleware/authenticate.js';
 import { authorize } from '../middleware/authorize.js';
 import { ROLES } from '../constants/roles.js';
+import { laskaAgentKey } from '../utils/laskaAgentKey.js';
 import { resolveSalesTenant, validateSalesTenantHeader } from '../middleware/tenant.js';
 import { getPool } from '../db/index.js';
 
@@ -66,14 +67,14 @@ function dictionaryScope(table, user, params) {
     const representative = user.representative?.trim();
     if (!representative) return [...conditions, 'FALSE'];
     params.push(representative);
-    conditions.push(`lower(btrim(agent_name)) = lower($${params.length})`);
+    conditions.push(`${laskaAgentKey('agent_name')} = ${laskaAgentKey('$' + params.length)}`);
   }
   if (user.role === ROLES.SUPERVISOR) {
     const departments = user.departments?.length ? user.departments : [user.department].filter(Boolean);
     params.push(departments);
     conditions.push(`EXISTS (
       SELECT 1 FROM public.agents a
-       WHERE lower(btrim(a.ta)) = lower(btrim(sales_routes.agent_name))
+       WHERE ${laskaAgentKey('a.ta')} = ${laskaAgentKey('sales_routes.agent_name')}
          AND a.department = ANY($${params.length}::text[])
     )`);
   }
