@@ -2,12 +2,13 @@ import { Router } from 'express';
 import { authenticate } from '../middleware/authenticate.js';
 import { authorize } from '../middleware/authorize.js';
 import { ROLES } from '../constants/roles.js';
+import { resolveSalesTenant, validateSalesTenantHeader } from '../middleware/tenant.js';
 import { getPool } from '../db/index.js';
 
 const router = Router();
-router.use(authenticate, authorize(ROLES.ADMIN));
+router.use(validateSalesTenantHeader, authenticate, resolveSalesTenant());
 router.use((req, res, next) => {
-  if (req.headers['x-tenant-id'] !== 'laska') return res.status(403).json({ message: 'Довідники доступні лише для ЛАСКА.' });
+  if (req.salesTenant !== 'laska') return res.status(403).json({ message: 'Довідники доступні лише для ЛАСКА.' });
   next();
 });
 const pool = getPool('laska');
@@ -16,7 +17,7 @@ const tables = {
   routes: { table: 'sales_routes', fields: ['agent_name', 'route_day', 'stop_order', 'store_code', 'store_name'], required: ['agent_name', 'stop_order', 'store_name'] },
 };
 const config = (req, res) => {
-  const c = tables[req.params.kind];
+  const c = Object.hasOwn(tables, req.params.kind) ? tables[req.params.kind] : null;
   if (!c) res.status(404).json({ message: 'Невідомий довідник.' });
   return c;
 };
@@ -57,13 +58,38 @@ const handle = (fn) => async (req, res) => {
     res.status(500).json({ message: 'Помилка роботи з довідником.' });
   }
 };
+function dictionaryScope(table, user, params) {
+  if (table !== 'sales_routes') return [];
+  // Older LASKA route records may predate the tenant column.
+  const conditions = ["COALESCE(to_jsonb(sales_routes)->>'tenant_id', 'LASKA') = 'LASKA'"];
+  if (user.role === ROLES.AGENT) {
+    const representative = user.representative?.trim();
+    if (!representative) return [...conditions, 'FALSE'];
+    params.push(representative);
+    conditions.push(`lower(btrim(agent_name)) = lower($${params.length})`);
+  }
+  if (user.role === ROLES.SUPERVISOR) {
+    const departments = user.departments?.length ? user.departments : [user.department].filter(Boolean);
+    params.push(departments);
+    conditions.push(`EXISTS (
+      SELECT 1 FROM public.agents a
+       WHERE lower(btrim(a.ta)) = lower(btrim(sales_routes.agent_name))
+         AND a.department = ANY($${params.length}::text[])
+    )`);
+  }
+  return conditions;
+}
+
 router.get('/:kind/filters', handle(async (req, res) => {
   const c = config(req, res); if (!c) return;
   const allowed = c.fields.filter(f => f !== 'product_name' && f !== 'store_name' && f !== 'stop_order' && f !== 'store_code');
   const options = {};
+  const params = [];
+  const conditions = dictionaryScope(c.table, req.user, params);
   for (const field of allowed) {
     const limit = c.table === 'products' ? '' : ' LIMIT 1000';
-    const result = await pool.query(`SELECT DISTINCT ${field} AS value FROM ${c.table} WHERE ${field} IS NOT NULL AND trim(${field}) <> '' ORDER BY value${limit}`);
+    const where = [...conditions, `NULLIF(trim(${field}), '') IS NOT NULL`].join(' AND ');
+    const result = await pool.query(`SELECT DISTINCT ${field} AS value FROM ${c.table} WHERE ${where} ORDER BY value${limit}`, params);
     options[field] = result.rows.map(row => row.value);
   }
   if (c.table === 'sales_routes') options.route_day = ['ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ'];
@@ -75,7 +101,7 @@ router.get('/:kind', handle(async (req, res) => {
   const page = Math.min(100000, Math.max(1, Number.parseInt(req.query.page, 10) || 1));
   const pageSize = req.query.pageSize === '20' ? 20 : 50;
   const params = [];
-  const conditions = [];
+  const conditions = dictionaryScope(c.table, req.user, params);
   if (c.table === 'sales_routes' && req.query.includeSeasonal !== 'true') {
     conditions.push("to_jsonb(sales_routes)->'is_seasonal' IS DISTINCT FROM 'true'::jsonb");
   }
@@ -105,13 +131,17 @@ router.get('/:kind', handle(async (req, res) => {
   }
   const filter = conditions.length ? ' WHERE ' + conditions.join(' AND ') : '';
   const count = await pool.query('SELECT count(*)::int AS total FROM ' + c.table + filter, params);
+  const columns = req.user.role === ROLES.ADMIN ? '*' : [
+    'id', ...c.fields,
+    ...(c.table === 'sales_routes' ? ["to_jsonb(sales_routes)->'is_seasonal' AS is_seasonal"] : []),
+  ].join(', ');
   const result = await pool.query(
-    'SELECT * FROM ' + c.table + filter + ' ORDER BY id DESC LIMIT $' + (params.length + 1) + ' OFFSET $' + (params.length + 2),
+    'SELECT ' + columns + ' FROM ' + c.table + filter + ' ORDER BY id DESC LIMIT $' + (params.length + 1) + ' OFFSET $' + (params.length + 2),
     [...params, pageSize, (page - 1) * pageSize],
   );
   res.json({ rows: result.rows, total: count.rows[0].total, page });
 }));
-router.post('/:kind', handle(async (req, res) => {
+router.post('/:kind', authorize(ROLES.ADMIN), handle(async (req, res) => {
   const c = config(req, res); if (!c) return;
   const values = validate(c, req.body);
   if (c.table === 'sales_routes' && values.store_code) {
@@ -131,7 +161,7 @@ router.post('/:kind', handle(async (req, res) => {
   );
   res.status(201).json(result.rows[0]);
 }));
-router.put('/:kind/:id', handle(async (req, res) => {
+router.put('/:kind/:id', authorize(ROLES.ADMIN), handle(async (req, res) => {
   const c = config(req, res); if (!c) return;
   const values = validate(c, req.body);
   if (c.table === 'sales_routes' && values.store_code) {
@@ -144,7 +174,7 @@ router.put('/:kind/:id', handle(async (req, res) => {
   if (!result.rowCount) return res.status(404).json({ message: 'Запис не знайдено.' });
   res.json(result.rows[0]);
 }));
-router.delete('/:kind/:id', handle(async (req, res) => {
+router.delete('/:kind/:id', authorize(ROLES.ADMIN), handle(async (req, res) => {
   const c = config(req, res); if (!c) return;
   const result = await pool.query('DELETE FROM ' + c.table + ' WHERE id = $1 RETURNING id', [req.params.id]);
   if (!result.rowCount) return res.status(404).json({ message: 'Запис не знайдено.' });

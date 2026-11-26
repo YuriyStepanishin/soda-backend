@@ -14,7 +14,7 @@ const filters = z.object({
 const equipmentScope = `e.tenant_id = 'LASKA'
   AND nullif(btrim(e.store_code), '') IS NOT NULL
   AND (
-    $1 IN ('admin', 'manager')
+    $1 IN ('admin', 'manager', 'brand_manager')
     OR ($1 = 'agent' AND lower(btrim(e.agent_name)) = lower(btrim($2)))
     OR ($1 = 'supervisor' AND EXISTS (
       SELECT 1 FROM public.agents a
@@ -33,14 +33,14 @@ const storeFilters = filters.extend({
 });
 
 router.use(validateSalesTenantHeader, authenticate, resolveSalesTenant(), (req, res, next) => {
-  if (req.salesTenant !== 'laska' || !['admin', 'manager', 'supervisor', 'agent'].includes(req.user.role)) {
+  if (req.salesTenant !== 'laska' || !['admin', 'manager', 'supervisor', 'agent', 'brand_manager'].includes(req.user.role)) {
     return res.status(403).json({ message: 'Довідник обладнання доступний користувачам ЛАСКА' });
   }
   next();
 });
 
 router.get('/', async (req, res) => {
-  const { role, representative, departments } = req.user;
+  const { role, representative, department, departments } = req.user;
   const parsed = filters.safeParse(req.query);
   if (!parsed.success) return res.status(400).json({ message: 'Некоректні параметри пошуку' });
 
@@ -54,7 +54,7 @@ router.get('/', async (req, res) => {
       WHERE ${equipmentScope} AND (${equipmentSearch})
       ORDER BY e.route_code, e.store_name, e.store_code, e.source_file_id, e.source_sheet, e.source_row
       LIMIT $5 OFFSET $6`,
-    [role, representative || null, departments || [], search, pageSize + 1, (page - 1) * pageSize],
+    [role, representative || null, departments?.length ? departments : [department].filter(Boolean), search, pageSize + 1, (page - 1) * pageSize],
   );
 
   res.set('Cache-Control', 'no-store').json({
@@ -67,7 +67,7 @@ router.get('/stores', async (req, res) => {
   const parsed = storeFilters.safeParse(req.query);
   if (!parsed.success) return res.status(400).json({ message: 'Некоректні параметри пошуку' });
 
-  const { role, representative, departments } = req.user;
+  const { role, representative, department, departments } = req.user;
   const { search, page, route, presence, pageSize: storePageSize } = parsed.data;
   const { rows: [result] } = await getPool('laska').query(
     `WITH scoped AS (
@@ -106,7 +106,7 @@ router.get('/stores', async (req, res) => {
      )
      SELECT COALESCE((SELECT jsonb_agg(p ORDER BY p.store_name, p.store_code) FROM store_page p), '[]') AS stores,
             ARRAY(SELECT DISTINCT route_code FROM scoped WHERE nullif(btrim(route_code), '') IS NOT NULL ORDER BY route_code) AS routes`,
-    [role, representative || null, departments || [], search, storePageSize + 1, (page - 1) * storePageSize, route, presence],
+    [role, representative || null, departments?.length ? departments : [department].filter(Boolean), search, storePageSize + 1, (page - 1) * storePageSize, route, presence],
   );
 
   res.set('Cache-Control', 'no-store').json({

@@ -5,10 +5,13 @@ import { z } from 'zod';
 import cloudinary, { ensureCloudinaryConfigured } from '../config/cloudinary.js';
 import { getPool } from '../db/index.js';
 import { authenticate } from '../middleware/authenticate.js';
+import { authorize } from '../middleware/authorize.js';
+import { ROLES } from '../constants/roles.js';
 import { resolveSalesTenant, validateSalesTenantHeader } from '../middleware/tenant.js';
 import { uploadToCloudinary } from '../services/cloudinary.js';
 
 const router = Router();
+const manageReports = authorize(ROLES.ADMIN, ROLES.MANAGER, ROLES.SUPERVISOR, ROLES.AGENT);
 const pool = getPool('laska');
 const pageSize = 12;
 const categories = z.enum(['merchandising', 'equipment', 'other']);
@@ -45,7 +48,7 @@ const upload = multer({
 }).array('photos', 5);
 
 const scopeParameters = ({ role, representative, department, departments }) => [
-  role,
+  role === 'brand_manager' ? 'manager' : role,
   representative || '',
   (departments?.length ? departments : department ? [department] : []).map(value => value.trim()).filter(Boolean),
 ];
@@ -64,7 +67,7 @@ const routesFrom = `
     AND ${scope('r.agent_name', 'a.department')}`;
 
 router.use(validateSalesTenantHeader, authenticate, resolveSalesTenant(), (req, res, next) => {
-  if (req.salesTenant !== 'laska' || !['admin', 'manager', 'supervisor', 'agent'].includes(req.user.role)) {
+  if (req.salesTenant !== 'laska') {
     return res.status(403).json({ message: 'Фотозвіт доступний користувачам ЛАСКА.' });
   }
   res.set('Cache-Control', 'no-store');
@@ -134,7 +137,7 @@ router.get('/reverse-location', async (req, res) => {
   }
 });
 
-router.get('/stores', async (req, res) => {
+router.get('/stores', manageReports, async (req, res) => {
   const search = searchText.safeParse(req.query.search);
   const department = searchText.safeParse(req.query.department);
   const agent = searchText.safeParse(req.query.agent);
@@ -260,7 +263,7 @@ router.get('/stats', async (req, res) => {
   res.json(stats);
 });
 
-router.delete('/:id/photos/:index', async (req, res) => {
+router.delete('/:id/photos/:index', manageReports, async (req, res) => {
   if (!/^[0-9a-f-]{36}$/i.test(req.params.id) || !/^\d+$/.test(req.params.index)) {
     return res.status(400).json({ message: 'Некоректний ідентифікатор фото.' });
   }
@@ -304,7 +307,7 @@ router.delete('/:id/photos/:index', async (req, res) => {
   }
 });
 
-router.post('/', (req, res, next) => {
+router.post('/', manageReports, (req, res, next) => {
   upload(req, res, error => {
     if (error) return res.status(400).json({ message: 'Додайте до п’яти фото JPG, PNG або WebP розміром до 5 МБ кожне.' });
     next();
