@@ -115,7 +115,7 @@ router.get('/reverse-location', async (req, res) => {
     url.searchParams.set('lon', key.split(',')[1]);
     const response = await fetch(url, {
       headers: {
-        'User-Agent': 'SODA-sales/3.9.5 (https://soda-frontend-omega.vercel.app/)',
+        'User-Agent': 'SODA-sales/3.9.6 (https://soda-frontend-omega.vercel.app/)',
         'Referer': 'https://soda-frontend-omega.vercel.app/',
         'Accept': 'application/json',
       },
