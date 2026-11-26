@@ -6,7 +6,7 @@ const { pools, getPool } = await import('../src/db/index.js');
 const { resolveSalesTenant, validateSalesTenantHeader } = await import('../src/middleware/tenant.js');
 const { validateDailyDateRange } = await import('../src/utils/dailySalesQuery.js');
 const { getSalesByDays: laskaDays, getSalesByDaysFilters: laskaFilters } = await import('../src/models/laskaSalesModel.js');
-const { getFilters: laskaReportFilters } = await import('../src/models/laskaSalesModel.js');
+const { getEffectiveQuery, getFilters: laskaReportFilters, getRouteHistoryFilters } = await import('../src/models/laskaSalesModel.js');
 const { getSalesByDays: olgaDays } = await import('../src/models/olgatorgSalesModel.js');
 const calls = [];
 for (const [tenant, pool] of Object.entries(pools)) {
@@ -77,6 +77,25 @@ test('report dictionaries remove only UI filters and retain mandatory role restr
     assert.equal(calls.length, 8);
     const expected = user.representative || user.departments?.[0] || user.brands?.[0];
     for (const call of calls) assert.ok(call.params.flat().includes(expected));
+  }
+});
+
+test('LASKA filters keep the assigned department and deny accounts without an assignment', async () => {
+  const supervisor = { role: 'supervisor', department: 'Місто', departments: [] };
+  calls.length = 0;
+  await laskaReportFilters({}, supervisor);
+  await getRouteHistoryFilters(getEffectiveQuery({ query: {}, user: supervisor }));
+  assert.equal(calls.length, 9);
+  for (const call of calls) assert.ok(call.params.flat().includes('Місто'));
+
+  for (const role of ['agent', 'supervisor']) {
+    calls.length = 0;
+    const user = { role };
+    await laskaReportFilters({ ta: 'Інший ТА', departments: ['Чужий відділ'] }, user);
+    const routes = await getRouteHistoryFilters(getEffectiveQuery({ query: {}, user }));
+    assert.deepEqual(routes, []);
+    assert.equal(calls.length, 8);
+    for (const call of calls) assert.match(call.sql, /AND FALSE/);
   }
 });
 

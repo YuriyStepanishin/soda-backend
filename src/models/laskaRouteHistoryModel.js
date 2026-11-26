@@ -66,7 +66,7 @@ export const createRouteHistoryPlan = ({ query = {}, user } = {}) => {
   });
 
   const allowedDepartments = user?.role === ROLES.SUPERVISOR
-    ? values(user.departments) : values(query.departments);
+    ? values(user.departments?.length ? user.departments : user.department) : values(query.departments);
   const allowedTms = user?.role === ROLES.BRAND_MANAGER ? values(user.brands) : values(query.tms);
   const requestedDepartments = values(query.department);
   const requestedTms = values(query.tm);

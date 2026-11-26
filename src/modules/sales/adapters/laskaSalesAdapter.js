@@ -47,10 +47,11 @@ const getLaskaSales = async (req, res) => {
     const query = getEffectiveQuery(req);
     const { page, limit, offset } = getPagination(req.query);
     const result = await getSales({ query, page, limit, offset });
-    const data = result.rows.map((row) => ({
-      ...row,
-      Дата: formatDateForApi(row['Дата']),
-    }));
+    const data = result.rows.map((row) => {
+      const record = { ...row, Дата: formatDateForApi(row['Дата']) };
+      if (!canViewVmd(req.user.role)) delete record['Цена закупки'];
+      return record;
+    });
     return res.json({
       success: true,
       data,
@@ -269,10 +270,7 @@ const getLaskaRouteHistory = async (req, res) => {
     });
 
     console.time('[ROUTE HISTORY] filters');
-    const filterRows = await getRouteHistoryFilters({
-      ta: effectiveQuery.ta,
-      department: effectiveQuery.department,
-    });
+    const filterRows = await getRouteHistoryFilters(effectiveQuery);
     console.timeEnd('[ROUTE HISTORY] filters');
 
     const routes = [
